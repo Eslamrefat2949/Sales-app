@@ -1,12 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Icon } from '../../components/Icon.tsx';
+import { isPinFormat, PinPad } from '../../components/PinPad.tsx';
 import { loadDirectory, signInWithPin, type DirectoryEntry } from '../../data/session.ts';
 import { useI18n } from '../../i18n/I18nProvider.tsx';
 import { readJson, tick, writeJson } from '../../lib/storage.ts';
-
-const PIN_LENGTH = 6;
-const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'back', '0', 'ok'] as const;
-type Key = (typeof KEYS)[number];
 
 /** Pick the branch (or your name) from a list, then type the PIN on a large keypad. */
 export function LoginScreen() {
@@ -33,7 +29,7 @@ export function LoginScreen() {
     options.find((entry) => entry.accountId === accountId) ?? (options.length === 1 ? options[0]! : null);
 
   const submit = async (code: string) => {
-    if (!selected || code.length !== PIN_LENGTH || busy) return;
+    if (!selected || !isPinFormat(code) || busy) return;
     setBusy(true);
     setMessage(null);
     const result = await signInWithPin(selected.accountId, code);
@@ -56,27 +52,6 @@ export function LoginScreen() {
             : t.pinFailed,
     );
   };
-
-  const press = (key: Key) => {
-    if (busy || !selected) return;
-    if (key === 'back') return setPin((current) => current.slice(0, -1));
-    if (key === 'ok') return void submit(pin);
-    if (pin.length >= PIN_LENGTH) return;
-    const next = pin + key;
-    setPin(next);
-    if (next.length === PIN_LENGTH) void submit(next);
-  };
-
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.target instanceof HTMLSelectElement) return;
-      if (/^[0-9]$/.test(event.key)) press(event.key as Key);
-      else if (event.key === 'Backspace') press('back');
-      else if (event.key === 'Enter') press('ok');
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  });
 
   return (
     <div className="flex min-h-full flex-col bg-bg">
@@ -160,58 +135,16 @@ export function LoginScreen() {
             </div>
           )}
 
-          <div key={shake} className={`flex flex-col items-center gap-3 pt-1 ${shake ? 'animate-pop' : ''}`}>
-            <div className="flex gap-3" dir="ltr" aria-live="polite" aria-label={`${pin.length} / ${PIN_LENGTH}`}>
-              {Array.from({ length: PIN_LENGTH }, (_, index) => (
-                <span
-                  key={index}
-                  className={`h-4 w-4 rounded-full transition duration-150 ${
-                    index < pin.length ? 'scale-110 bg-primary' : 'bg-surface-2 ring-1 ring-line'
-                  }`}
-                />
-              ))}
-            </div>
-            <p className={`min-h-6 text-center text-sm ${message ? 'text-danger' : 'text-muted'}`} role="status">
-              {busy ? t.signingIn : message}
-            </p>
-          </div>
-
-          <div className="grid grid-cols-3 gap-2.5" dir="ltr">
-            {KEYS.map((key) =>
-              key === 'back' ? (
-                <button
-                  key={key}
-                  type="button"
-                  aria-label={t.deleteDigit}
-                  onClick={() => press(key)}
-                  className="press flex h-15 items-center justify-center rounded-2xl text-muted"
-                >
-                  <Icon name="backspace" className="h-7 w-7" />
-                </button>
-              ) : key === 'ok' ? (
-                <button
-                  key={key}
-                  type="button"
-                  aria-label={t.loginTitle}
-                  disabled={!selected || pin.length !== PIN_LENGTH || busy}
-                  onClick={() => press(key)}
-                  className="press flex h-15 items-center justify-center rounded-2xl bg-primary text-primary-fg disabled:opacity-35"
-                >
-                  <Icon name="check" className="h-7 w-7" />
-                </button>
-              ) : (
-                <button
-                  key={key}
-                  type="button"
-                  disabled={!selected}
-                  onClick={() => press(key)}
-                  className="press h-15 rounded-2xl bg-surface-2 font-display text-2xl font-medium tabular disabled:opacity-40"
-                >
-                  {key}
-                </button>
-              ),
-            )}
-          </div>
+          <PinPad
+            value={pin}
+            onChange={setPin}
+            onSubmit={(code) => void submit(code)}
+            disabled={!selected}
+            busy={busy}
+            message={message}
+            shakeKey={shake}
+            submitLabel={t.loginTitle}
+          />
         </section>
       </main>
     </div>

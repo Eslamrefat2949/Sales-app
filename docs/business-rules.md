@@ -215,6 +215,21 @@ Implemented in `packages/domain/src/offer.ts`, `pricing.ts` and `cart.ts`.
   The database also refuses a duplicate number.
 - After a close the report starts again from zero, including the voided list.
 
+## PINs and staff (18 Nov 2026, before go-live)
+
+- **PINs are 4 to 6 digits.** Every branch starts on the temporary PIN **1234**. At the first sign-in
+  the app asks the branch to choose its own PIN (typed twice) before anything else opens. Easy PINs are
+  refused: 1234, one digit repeated (0000, 1111…) and straight runs (2345, 9876…).
+- **Changing the PIN later:** Account menu (top of the screen) > Change PIN: current PIN, new PIN,
+  new PIN again. Wrong current PINs count towards the 15-minute lock. A new PIN signs out the
+  account's other phones; the phone that changed it stays signed in.
+- **Forgotten PIN:** an admin taps "Back to 1234" in Management > PINs; the branch chooses a new PIN
+  at its next sign-in. Admins can also set a PIN directly (then no change is forced).
+- **Adding a sales person (Management > Staff):** pick the branch, type the name exactly as in Odoo
+  (with the number; existing names are suggested), tap Add. Someone already in another branch is added
+  to this one too. The branch's list shows everyone with a Remove button. Branch phones see the change
+  the next time the app opens. The staff sheet stays for changing many people at once.
+
 ## Open items
 
 1. Items without discount: also excluded from the offer? (Today: yes, they sell at the price after.)

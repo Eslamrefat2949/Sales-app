@@ -5,6 +5,7 @@ import { loadAppData, type LoadedData } from './data/appData.ts';
 import { signOut } from './data/session.ts';
 import { AdminApp } from './features/admin/AdminApp.tsx';
 import { BranchApp } from './features/branch/BranchApp.tsx';
+import { ChangePinScreen } from './features/login/ChangePinScreen.tsx';
 import { LoginScreen, Wordmark } from './features/login/LoginScreen.tsx';
 import { useI18n } from './i18n/I18nProvider.tsx';
 import { supabase } from './lib/supabase.ts';
@@ -58,7 +59,19 @@ function SignedIn({ userId }: { readonly userId: string }) {
   if (state.status !== 'ready') {
     return <Splash state={state} onRetry={() => setAttempt((value) => value + 1)} />;
   }
-  return state.data.config.account.kind === 'admin' ? <AdminApp data={state.data} /> : <BranchApp data={state.data} />;
+  const { account } = state.data.config;
+  // On the default PIN nothing else opens until the account has chosen its own PIN.
+  if (account.mustChangePin && !state.data.offline) {
+    return (
+      <ChangePinScreen
+        accountId={account.id}
+        accountLabel={account.label}
+        mode="forced"
+        onDone={() => setAttempt((value) => value + 1)}
+      />
+    );
+  }
+  return account.kind === 'admin' ? <AdminApp data={state.data} /> : <BranchApp data={state.data} />;
 }
 
 function Splash({ state, onRetry }: { readonly state?: LoadState; readonly onRetry?: () => void }) {

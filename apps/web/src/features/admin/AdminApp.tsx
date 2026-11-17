@@ -20,15 +20,21 @@ import {
   fetchBranchesToday,
   listAccounts,
   listBranchCodes,
+  listBranches,
+  listBranchStaff,
+  listStaffNames,
   listStaffRows,
+  resetAccountPin,
   loadSettings,
   saveDefaultDiscount,
   saveOffer,
   setAccountPin,
   setItemsDiscountable,
+  setStaffLink,
   uploadProducts,
   uploadStaff,
   type AccountRow,
+  type BranchOption,
   type BranchToday,
   type OfferRow,
 } from '../../data/admin.ts';
@@ -61,7 +67,12 @@ export function AdminApp({ data }: { readonly data: LoadedData }) {
 
   return (
     <div className="flex min-h-full flex-col">
-      <BranchHeader title={t.adminTitle} subtitle={data.config.account.label} offline={data.offline}>
+      <BranchHeader
+        account={data.config.account}
+        title={t.adminTitle}
+        subtitle={data.config.account.label}
+        offline={data.offline}
+      >
         <nav className="flex gap-2 overflow-x-auto pb-1">
           {TABS.map(({ tab: option, icon }) => (
             <button
@@ -384,6 +395,165 @@ function Items() {
   );
 }
 
+/** Day-to-day staff changes: pick a branch, add one person by name, or take someone off it. */
+function StaffByBranch() {
+  const { t } = useI18n();
+  const notify = useNotify();
+  const [branches, setBranches] = useState<BranchOption[]>([]);
+  const [branchId, setBranchId] = useState('');
+  const [staff, setStaff] = useState<{ id: string; name: string }[] | null>(null);
+  const [names, setNames] = useState<string[]>([]);
+  const [name, setName] = useState('');
+  const [removing, setRemoving] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const branch = branches.find((option) => option.id === branchId) ?? null;
+
+  useEffect(() => {
+    listBranches()
+      .then(setBranches)
+      .catch(() => notify(t.genericError, 'error'));
+    listStaffNames()
+      .then(setNames)
+      .catch(() => undefined);
+  }, [notify, t]);
+
+  const loadStaff = useCallback(
+    (id: string) => {
+      setStaff(null);
+      listBranchStaff(id)
+        .then(setStaff)
+        .catch(() => notify(t.genericError, 'error'));
+    },
+    [notify, t],
+  );
+  useEffect(() => {
+    if (branchId) loadStaff(branchId);
+  }, [branchId, loadStaff]);
+
+  const change = async (person: string, active: boolean) => {
+    if (!branch || person.trim() === '') return;
+    setBusy(true);
+    try {
+      await setStaffLink(person, branch.id, active);
+      notify(
+        active ? t.staffAdded(person.trim().toUpperCase(), branch.code) : t.staffRemoved(person, branch.code),
+        'success',
+      );
+      if (active) setName('');
+      setRemoving(null);
+      loadStaff(branch.id);
+      if (active) void listStaffNames().then(setNames);
+    } catch {
+      notify(t.genericError, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card title={t.staffByBranchTitle} icon="users">
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor="staff-branch" className="text-sm font-medium text-muted">
+          {t.branch}
+        </label>
+        <select
+          id="staff-branch"
+          dir="ltr"
+          value={branchId}
+          onChange={(event) => setBranchId(event.target.value)}
+          className="h-13 rounded-2xl border border-line bg-surface-2 px-3 text-base font-semibold"
+        >
+          <option value="">{t.choose}</option>
+          {branches.map((option) => (
+            <option key={option.id} value={option.id}>
+              {option.code} · {option.posName}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {branch ? (
+        <>
+          <form
+            className="flex flex-col gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void change(name, true);
+            }}
+          >
+            <label htmlFor="staff-name" className="text-sm font-medium text-muted">
+              {t.addStaffLabel(branch.code)}
+            </label>
+            <div className="flex gap-2">
+              <input
+                id="staff-name"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                list="staff-names"
+                dir="ltr"
+                autoComplete="off"
+                placeholder="1234-AHMED MOHAMED ALI"
+                className="h-12 min-w-0 flex-1 rounded-xl border border-line bg-surface-2 px-3 font-medium uppercase"
+              />
+              <button
+                type="submit"
+                disabled={busy || name.trim() === ''}
+                className="press flex h-12 shrink-0 items-center gap-1.5 rounded-xl bg-primary px-4 font-semibold text-primary-fg disabled:opacity-50"
+              >
+                <Icon name="plus" className="h-4 w-4" />
+                {t.addStaff}
+              </button>
+            </div>
+            <datalist id="staff-names">
+              {names.map((option) => (
+                <option key={option} value={option} />
+              ))}
+            </datalist>
+            <p className="text-xs text-muted">{t.staffNameHint}</p>
+          </form>
+
+          <div className="flex flex-col gap-2">
+            <h3 className="text-sm font-semibold text-muted">{t.branchStaffCount(staff?.length ?? 0)}</h3>
+            {staff === null ? (
+              <p className="text-sm text-muted">{t.reading}</p>
+            ) : staff.length === 0 ? (
+              <p className="text-sm text-muted">{t.noBranchStaff}</p>
+            ) : (
+              <ul className="flex flex-col gap-1.5">
+                {staff.map((person) => (
+                  <li key={person.id} className="flex items-center gap-2 rounded-xl bg-surface-2 px-3 py-2">
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium" dir="ltr">
+                      {person.name}
+                    </span>
+                    {removing === person.id ? (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void change(person.name, false)}
+                        className="press shrink-0 rounded-lg bg-danger px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
+                      >
+                        {t.confirmRemove}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setRemoving(person.id)}
+                        className="press shrink-0 rounded-lg bg-surface px-3 py-1.5 text-sm font-semibold text-danger"
+                      >
+                        {t.removeStaff}
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </>
+      ) : null}
+    </Card>
+  );
+}
+
 function Staff() {
   const { t } = useI18n();
   const notify = useNotify();
@@ -454,50 +624,53 @@ function Staff() {
   const blocked = !prepared || prepared.rows.length === 0 || prepared.unknownBranches.length > 0;
 
   return (
-    <Card title={t.staffTitle} icon="users" template="staff">
-      <p className="text-sm text-muted">{t.staffHint}</p>
-      <button
-        type="button"
-        disabled={busy}
-        onClick={() => void downloadCurrent()}
-        className="press flex h-12 items-center justify-center gap-2 rounded-2xl bg-surface-2 font-semibold disabled:opacity-50"
-      >
-        <Icon name="download" className="h-4 w-4" />
-        {t.downloadCurrentStaff}
-      </button>
-      <FilePicker label={t.chooseFile} onFile={(file) => void read(file)} />
-      {prepared ? (
-        <div className="grid grid-cols-2 gap-3">
-          <StatTile tone="blue" icon="users" label={t.staffPeople}>
-            {prepared.people}
-          </StatTile>
-          <StatTile tone="green" icon="check" label={t.staffRowsLabel}>
-            {prepared.rows.length}
-          </StatTile>
-          <StatTile tone="amber" icon="logout" label={t.staffLeaving}>
-            {prepared.leaving.length}
-          </StatTile>
-          <StatTile tone="purple" icon="close" label={t.staffInvalid}>
-            {prepared.invalid.length + prepared.unknownBranches.length}
-          </StatTile>
-        </div>
-      ) : null}
-      {status ? (
-        <p className="rounded-2xl bg-surface-2 p-3 text-sm" role="status">
-          {status}
-        </p>
-      ) : null}
-      {prepared ? (
+    <>
+      <StaffByBranch />
+      <Card title={t.staffTitle} icon="upload" template="staff">
+        <p className="text-sm text-muted">{t.staffHint}</p>
         <button
           type="button"
-          disabled={busy || blocked}
-          onClick={() => void upload()}
-          className="press h-14 rounded-2xl bg-primary font-semibold text-primary-fg disabled:opacity-50"
+          disabled={busy}
+          onClick={() => void downloadCurrent()}
+          className="press flex h-12 items-center justify-center gap-2 rounded-2xl bg-surface-2 font-semibold disabled:opacity-50"
         >
-          {t.upload}
+          <Icon name="download" className="h-4 w-4" />
+          {t.downloadCurrentStaff}
         </button>
-      ) : null}
-    </Card>
+        <FilePicker label={t.chooseFile} onFile={(file) => void read(file)} />
+        {prepared ? (
+          <div className="grid grid-cols-2 gap-3">
+            <StatTile tone="blue" icon="users" label={t.staffPeople}>
+              {prepared.people}
+            </StatTile>
+            <StatTile tone="green" icon="check" label={t.staffRowsLabel}>
+              {prepared.rows.length}
+            </StatTile>
+            <StatTile tone="amber" icon="logout" label={t.staffLeaving}>
+              {prepared.leaving.length}
+            </StatTile>
+            <StatTile tone="purple" icon="close" label={t.staffInvalid}>
+              {prepared.invalid.length + prepared.unknownBranches.length}
+            </StatTile>
+          </div>
+        ) : null}
+        {status ? (
+          <p className="rounded-2xl bg-surface-2 p-3 text-sm" role="status">
+            {status}
+          </p>
+        ) : null}
+        {prepared ? (
+          <button
+            type="button"
+            disabled={busy || blocked}
+            onClick={() => void upload()}
+            className="press h-14 rounded-2xl bg-primary font-semibold text-primary-fg disabled:opacity-50"
+          >
+            {t.upload}
+          </button>
+        ) : null}
+      </Card>
+    </>
   );
 }
 
@@ -604,6 +777,7 @@ function Pins() {
   const notify = useNotify();
   const [accounts, setAccounts] = useState<AccountRow[]>([]);
   const [editing, setEditing] = useState<string | null>(null);
+  const [resetting, setResetting] = useState<string | null>(null);
   const [pin, setPin] = useState('');
 
   const load = useCallback(() => {
@@ -615,12 +789,23 @@ function Pins() {
 
   const save = async (account: AccountRow) => {
     const value = normalizeDigits(pin);
-    if (!/^\d{6}$/.test(value)) return notify(t.pinFormat, 'error');
+    if (!/^\d{4,6}$/.test(value)) return notify(t.pinFormat, 'error');
     try {
       await setAccountPin(account.id, value);
       notify(t.pinSet(account.label), 'success');
       setEditing(null);
       setPin('');
+      load();
+    } catch {
+      notify(t.genericError, 'error');
+    }
+  };
+
+  const reset = async (account: AccountRow) => {
+    try {
+      await resetAccountPin(account.id);
+      notify(t.resetPinDone(account.label), 'success');
+      setResetting(null);
       load();
     } catch {
       notify(t.genericError, 'error');
@@ -642,19 +827,44 @@ function Pins() {
                 <div className="truncate font-semibold" dir="ltr">
                   {account.label}
                 </div>
-                <div className="text-xs text-muted">{account.hasPin ? t.hasPin : t.noPin}</div>
+                <div className={`text-xs ${account.onDefaultPin ? 'font-semibold text-promo' : 'text-muted'}`}>
+                  {account.onDefaultPin ? t.onDefaultPin : account.hasPin ? t.hasPin : t.noPin}
+                </div>
               </div>
               <button
                 type="button"
                 onClick={() => {
+                  setResetting(resetting === account.id ? null : account.id);
+                  setEditing(null);
+                }}
+                className="press shrink-0 rounded-xl bg-surface px-3 py-2 text-sm font-semibold text-promo shadow-sm"
+              >
+                {t.resetPin}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
                   setEditing(editing === account.id ? null : account.id);
+                  setResetting(null);
                   setPin('');
                 }}
-                className="press rounded-xl bg-surface px-3 py-2 text-sm font-semibold text-primary shadow-sm"
+                className="press shrink-0 rounded-xl bg-surface px-3 py-2 text-sm font-semibold text-primary shadow-sm"
               >
                 {t.setPin}
               </button>
             </div>
+            {resetting === account.id ? (
+              <div className="animate-rise flex flex-col gap-2 rounded-xl bg-promo-bg p-3">
+                <p className="text-sm text-promo">{t.resetPinConfirm(account.label)}</p>
+                <button
+                  type="button"
+                  onClick={() => void reset(account)}
+                  className="press h-11 rounded-xl bg-primary font-semibold text-primary-fg"
+                >
+                  {t.resetPin}
+                </button>
+              </div>
+            ) : null}
             {editing === account.id ? (
               <form
                 className="animate-rise flex gap-2"
@@ -668,10 +878,11 @@ function Pins() {
                   onChange={(event) => setPin(event.target.value)}
                   inputMode="numeric"
                   maxLength={6}
+                  minLength={4}
                   autoFocus
                   dir="ltr"
                   aria-label={t.newPin}
-                  placeholder="••••••"
+                  placeholder="••••"
                   className="h-12 min-w-0 flex-1 rounded-xl border border-line bg-surface px-3 text-center font-mono text-xl tracking-[0.4em]"
                 />
                 <button type="submit" className="press h-12 rounded-xl bg-primary px-4 font-semibold text-primary-fg">

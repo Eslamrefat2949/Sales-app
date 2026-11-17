@@ -135,22 +135,41 @@ export interface AccountRow {
   readonly kind: 'admin' | 'branch';
   readonly label: string;
   readonly hasPin: boolean;
+  /** Still on the default PIN 1234. */
+  readonly onDefaultPin: boolean;
 }
 
 export async function listAccounts(): Promise<AccountRow[]> {
   const rows = unwrap(
     await supabase
       .from('accounts')
-      .select('id, kind, display_name, user_id')
+      .select('id, kind, display_name, user_id, must_change_pin')
       .eq('is_active', true)
       .order('kind')
       .order('display_name'),
-  ) as { id: string; kind: 'admin' | 'branch'; display_name: string; user_id: string | null }[];
-  return rows.map((row) => ({ id: row.id, kind: row.kind, label: row.display_name, hasPin: row.user_id !== null }));
+  ) as {
+    id: string;
+    kind: 'admin' | 'branch';
+    display_name: string;
+    user_id: string | null;
+    must_change_pin: boolean;
+  }[];
+  return rows.map((row) => ({
+    id: row.id,
+    kind: row.kind,
+    label: row.display_name,
+    hasPin: row.user_id !== null,
+    onDefaultPin: row.must_change_pin,
+  }));
 }
 
 export async function setAccountPin(accountId: string, pin: string): Promise<void> {
   unwrap(await supabase.rpc('admin_set_pin', { p_account_id: accountId, p_pin: pin }));
+}
+
+/** Back to the default PIN 1234; the account must choose a new PIN at its next sign-in. */
+export async function resetAccountPin(accountId: string): Promise<void> {
+  unwrap(await supabase.rpc('admin_reset_pin', { p_account_id: accountId }));
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -200,4 +219,45 @@ export async function uploadStaff(rows: readonly StaffRow[]): Promise<StaffUploa
     active_employees: number;
   };
   return { added: result.added, left: result.left, activeEmployees: result.active_employees };
+}
+
+export interface BranchOption {
+  readonly id: string;
+  readonly code: string;
+  readonly posName: string;
+}
+
+export async function listBranches(): Promise<BranchOption[]> {
+  const rows = unwrap(
+    await supabase.from('branches').select('id, code, pos_name').eq('is_active', true).order('code'),
+  ) as { id: string; code: string; pos_name: string }[];
+  return rows.map((row) => ({ id: row.id, code: row.code, posName: row.pos_name }));
+}
+
+/** Active sales people of one branch, by name. */
+export async function listBranchStaff(branchId: string): Promise<{ id: string; name: string }[]> {
+  const rows = unwrap(
+    await supabase
+      .from('employee_branches')
+      .select('employees!inner(id, odoo_name, is_active)')
+      .eq('branch_id', branchId)
+      .eq('is_active', true)
+      .eq('employees.is_active', true),
+  ) as unknown as { employees: { id: string; odoo_name: string } }[];
+  return rows
+    .map((row) => ({ id: row.employees.id, name: row.employees.odoo_name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Every active sales person's name, to suggest while typing. */
+export async function listStaffNames(): Promise<string[]> {
+  const rows = unwrap(
+    await supabase.from('employees').select('odoo_name').eq('is_active', true).order('odoo_name'),
+  ) as { odoo_name: string }[];
+  return rows.map((row) => row.odoo_name);
+}
+
+/** Adds one sales person to a branch (created if new) or takes them off it. Other branches stay. */
+export async function setStaffLink(name: string, branchId: string, active: boolean): Promise<void> {
+  unwrap(await supabase.rpc('admin_set_staff_link', { p_name: name, p_branch_id: branchId, p_active: active }));
 }

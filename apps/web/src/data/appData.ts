@@ -19,7 +19,13 @@ export interface Employee {
 }
 
 export interface AppConfig {
-  readonly account: { readonly id: string; readonly kind: 'admin' | 'branch'; readonly label: string };
+  readonly account: {
+    readonly id: string;
+    readonly kind: 'admin' | 'branch';
+    readonly label: string;
+    /** On the default PIN: the account must choose its own PIN before anything else. */
+    readonly mustChangePin: boolean;
+  };
   readonly branch: { readonly id: string; readonly code: string; readonly posName: string } | null;
   readonly defaultDiscountPercent: number;
   readonly offer: (Offer & { readonly name: string }) | null;
@@ -51,7 +57,7 @@ export interface Catalog {
 }
 
 interface BootstrapRow {
-  account: { id: string; kind: 'admin' | 'branch'; label: string };
+  account: { id: string; kind: 'admin' | 'branch'; label: string; must_change_pin?: boolean };
   branch: { id: string; code: string; pos_name: string } | null;
   default_discount_percent: number;
   offer: { id: string; code: string; name: string; buy_qty: number; pay_qty: number } | null;
@@ -65,7 +71,12 @@ type CatalogRow = [string, string, string, number, number, boolean, string | nul
 
 function toConfig(row: BootstrapRow): AppConfig {
   return {
-    account: row.account,
+    account: {
+      id: row.account.id,
+      kind: row.account.kind,
+      label: row.account.label,
+      mustChangePin: row.account.must_change_pin === true,
+    },
     branch: row.branch ? { id: row.branch.id, code: row.branch.code, posName: row.branch.pos_name } : null,
     defaultDiscountPercent: Number(row.default_discount_percent),
     offer: row.offer

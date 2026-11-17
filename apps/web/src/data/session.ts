@@ -1,4 +1,4 @@
-import { supabase, unwrap } from '../lib/supabase.ts';
+import { errorCode, supabase, unwrap } from '../lib/supabase.ts';
 
 export interface DirectoryEntry {
   readonly accountId: string;
@@ -44,6 +44,27 @@ export async function signInWithPin(accountId: string, pin: string): Promise<Sig
   }
   const { error } = await supabase.auth.signInWithPassword({ email: check.email, password: pin });
   return error ? { ok: false, reason: 'FAILED' } : { ok: true };
+}
+
+export type ChangePinError = 'WRONG_PIN' | 'PIN_WEAK' | 'PIN_FORMAT' | 'LOCKED' | 'OFFLINE' | 'FAILED';
+
+/**
+ * Changes the PIN of the signed-in account, then signs this phone in again with the new PIN (a new
+ * PIN signs out every phone of the account). The current PIN is not needed on the default PIN.
+ */
+export async function changeOwnPin(
+  accountId: string,
+  current: string | null,
+  next: string,
+): Promise<{ readonly ok: true } | { readonly ok: false; readonly reason: ChangePinError }> {
+  const { error } = await supabase.rpc('change_own_pin', { p_current: current, p_new: next });
+  if (error) {
+    const code = errorCode(error);
+    const known: readonly ChangePinError[] = ['WRONG_PIN', 'PIN_WEAK', 'PIN_FORMAT', 'LOCKED', 'OFFLINE'];
+    return { ok: false, reason: known.includes(code as ChangePinError) ? (code as ChangePinError) : 'FAILED' };
+  }
+  const again = await signInWithPin(accountId, next);
+  return again.ok ? { ok: true } : { ok: false, reason: 'FAILED' };
 }
 
 export async function signOut(): Promise<void> {

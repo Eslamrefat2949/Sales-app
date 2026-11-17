@@ -11,6 +11,7 @@ import { businessDateOf } from '../../lib/format.ts';
 import { useCart } from '../../state/cart.ts';
 import { CheckoutView, type CheckoutResult } from '../checkout/CheckoutView.tsx';
 import { ConfirmationView } from '../checkout/ConfirmationView.tsx';
+import { ChangePinScreen } from '../login/ChangePinScreen.tsx';
 import { Wordmark } from '../login/LoginScreen.tsx';
 import { ReportView } from '../report/ReportView.tsx';
 import { SellView } from '../sell/SellView.tsx';
@@ -73,6 +74,7 @@ export function BranchApp({ data }: { readonly data: LoadedData }) {
   return (
     <div className="flex min-h-full flex-col">
       <BranchHeader
+        account={data.config.account}
         title={branch.posName}
         subtitle={`${branch.code}${sync.device ? ` · ${t.phoneLabel(sync.device.number)}` : ''}`}
         sync={sync}
@@ -122,12 +124,14 @@ export function BranchApp({ data }: { readonly data: LoadedData }) {
 
 /** Blue header with the page title, the sync state and the account menu. */
 export function BranchHeader({
+  account,
   title,
   subtitle,
   sync,
   offline,
   children,
 }: {
+  readonly account: { readonly id: string; readonly label: string };
   readonly title: string;
   readonly subtitle: string;
   readonly sync?: BranchSync;
@@ -135,7 +139,9 @@ export function BranchHeader({
   readonly children?: ReactNode;
 }) {
   const { t, lang, toggleLanguage } = useI18n();
-  const [confirmOut, setConfirmOut] = useState(false);
+  const notify = useNotify();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [changingPin, setChangingPin] = useState(false);
   const online = sync ? sync.online : !offline;
   const pending = sync?.pending.length ?? 0;
 
@@ -163,8 +169,8 @@ export function BranchHeader({
             </button>
             <button
               type="button"
-              aria-label={t.signOut}
-              onClick={() => setConfirmOut(true)}
+              aria-label={t.accountMenu}
+              onClick={() => setMenuOpen(true)}
               className="press flex h-8 w-8 items-center justify-center rounded-full bg-white/18"
             >
               <Icon name="logout" className="h-4 w-4" />
@@ -179,9 +185,25 @@ export function BranchHeader({
         </div>
         {children}
       </div>
-      {confirmOut ? (
-        <Sheet title={t.signOut} closeLabel={t.cancel} onClose={() => setConfirmOut(false)}>
-          <div className="flex flex-col gap-4 pb-2 text-fg">
+      {menuOpen ? (
+        <Sheet
+          title={t.accountMenu}
+          subtitle={<bdi dir="ltr">{account.label}</bdi>}
+          closeLabel={t.cancel}
+          onClose={() => setMenuOpen(false)}
+        >
+          <div className="flex flex-col gap-3 pb-2 text-fg">
+            <button
+              type="button"
+              onClick={() => {
+                setMenuOpen(false);
+                setChangingPin(true);
+              }}
+              className="press flex h-14 items-center justify-center gap-2 rounded-2xl bg-primary-soft text-lg font-semibold text-primary"
+            >
+              <Icon name="key" />
+              {t.changePinTitle}
+            </button>
             {pending > 0 ? <p className="rounded-2xl bg-promo-bg p-3 text-promo">{t.signOutPending(pending)}</p> : null}
             <button
               type="button"
@@ -192,6 +214,18 @@ export function BranchHeader({
             </button>
           </div>
         </Sheet>
+      ) : null}
+      {changingPin ? (
+        <ChangePinScreen
+          accountId={account.id}
+          accountLabel={account.label}
+          mode="voluntary"
+          onCancel={() => setChangingPin(false)}
+          onDone={() => {
+            setChangingPin(false);
+            notify(t.pinChanged, 'success');
+          }}
+        />
       ) : null}
     </header>
   );
