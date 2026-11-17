@@ -18,8 +18,10 @@ const BUY4_PAY2: Offer = { id: 'offer-b4p2', code: 'B4P2', buyQty: 4, payQty: 2 
 function units(...salePrices: number[]): CartUnit[] {
   return salePrices.map((price, index) => ({
     seq: index + 1,
+    barcode: `A${1000 + index}-M`,
     itemCode: `A${1000 + index}`,
     size: 'M',
+    discountable: true,
     listPrice: fromPounds(price * 2),
     salePrice: fromPounds(price),
   }));
@@ -110,7 +112,15 @@ describe('pieces added after the offer was applied', () => {
     const application = createOfferApplication(before, BUY4_PAY2);
     const after: CartUnit[] = [
       ...before,
-      { seq: 6, itemCode: 'A2000', size: 'L', listPrice: 400000, salePrice: 200000 },
+      {
+        seq: 6,
+        barcode: 'A2000-L',
+        itemCode: 'A2000',
+        size: 'L',
+        listPrice: 400000,
+        salePrice: 200000,
+        discountable: true,
+      },
     ];
     const cart = priceCart(after, SETTINGS, application);
     expect(finalPrices(cart)).toEqual([1000, 800, 0, 0, 210, 1400]);

@@ -1,6 +1,5 @@
 import { normalizeEgyptianMobile, settlePayments, type PaymentLine, type PricedCart } from '@ravin-sales/domain';
 import { useMemo, useState, type ReactNode } from 'react';
-import { Price } from '../../components/Price.tsx';
 import { EMPLOYEES, PAYMENT_METHODS } from '../../config/demo.ts';
 import { useI18n } from '../../i18n/I18nProvider.tsx';
 import { formatMoney, moneyToInput, parseAmount } from '../../lib/format.ts';
@@ -20,43 +19,72 @@ interface CheckoutViewProps {
   readonly onConfirm: (result: CheckoutResult) => void;
 }
 
+interface PaymentRow {
+  readonly id: number;
+  readonly methodCode: string;
+  readonly amount: string;
+}
+
+function defaultMethod(): string {
+  const last = readJson<string>('last-payment-method', '');
+  return PAYMENT_METHODS.some((method) => method.code === last) ? last : (PAYMENT_METHODS[0]?.code ?? '');
+}
+
+/** Parses the rows; the same method chosen twice is added up into one payment. Null if an amount is invalid. */
+function toPaymentLines(rows: readonly PaymentRow[]): PaymentLine[] | null {
+  const byMethod = new Map<string, number>();
+  for (const row of rows) {
+    const amount = parseAmount(row.amount);
+    if (amount === null) return null;
+    byMethod.set(row.methodCode, (byMethod.get(row.methodCode) ?? 0) + amount);
+  }
+  return [...byMethod].map(([methodCode, amount]) => ({ methodCode, amount }));
+}
+
 export function CheckoutView({ priced, knownCustomers, onBack, onConfirm }: CheckoutViewProps) {
   const { t, lang } = useI18n();
   const total = priced.totals.total;
   const [salesPersonId, setSalesPersonId] = useState(() => readJson<string>('last-sales-person', ''));
   const [mobileInput, setMobileInput] = useState('');
   const [name, setName] = useState('');
-  const [amounts, setAmounts] = useState<Record<string, string>>({});
+  // Most sales are paid in full with one method: the row starts with the whole amount filled in.
+  const [rows, setRows] = useState<readonly PaymentRow[]>(() => [
+    { id: 1, methodCode: defaultMethod(), amount: moneyToInput(total) },
+  ]);
 
   const mobile = normalizeEgyptianMobile(mobileInput);
+  const mobileInvalid = mobileInput.trim() !== '' && mobile === null;
   const knownName = mobile ? knownCustomers.get(mobile) : undefined;
 
-  const parsed = useMemo(() => {
-    const lines: PaymentLine[] = [];
-    for (const method of PAYMENT_METHODS) {
-      const amount = parseAmount(amounts[method.code] ?? '');
-      if (amount === null) return null;
-      lines.push({ methodCode: method.code, amount });
-    }
-    return lines;
-  }, [amounts]);
-  const settlement = parsed ? settlePayments(total, parsed, PAYMENT_METHODS) : null;
-  const tendered = parsed?.reduce((sum, line) => sum + line.amount, 0) ?? 0;
+  const lines = useMemo(() => toPaymentLines(rows), [rows]);
+  const settlement = lines ? settlePayments(total, lines, PAYMENT_METHODS) : null;
+  const methodLabel = (code: string) => PAYMENT_METHODS.find((method) => method.code === code)?.label[lang] ?? code;
 
-  const fillRest = (code: string) => {
-    const others = (parsed ?? [])
-      .filter((line) => line.methodCode !== code)
-      .reduce((sum, line) => sum + line.amount, 0);
-    setAmounts((current) => ({ ...current, [code]: moneyToInput(Math.max(0, total - others)) }));
+  const updateRow = (id: number, patch: Partial<Omit<PaymentRow, 'id'>>) =>
+    setRows((current) => current.map((row) => (row.id === id ? { ...row, ...patch } : row)));
+
+  /** Fills this row with whatever the other rows leave to pay. */
+  const fillRemaining = (id: number) => {
+    const others = toPaymentLines(rows.filter((row) => row.id !== id)) ?? [];
+    const paidElsewhere = others.reduce((sum, line) => sum + line.amount, 0);
+    updateRow(id, { amount: moneyToInput(Math.max(0, total - paidElsewhere)) });
   };
 
-  const blocker = !salesPersonId
-    ? t.needSalesPerson
-    : !mobile
-      ? t.needMobile
-      : name.trim() === '' && !knownName
-        ? t.needName
-        : null;
+  const addSplit = () => {
+    const used = new Set(rows.map((row) => row.methodCode));
+    const next = PAYMENT_METHODS.find((method) => !used.has(method.code)) ?? PAYMENT_METHODS[0];
+    const paid = (lines ?? []).reduce((sum, line) => sum + line.amount, 0);
+    setRows((current) => [
+      ...current,
+      {
+        id: Math.max(...current.map((row) => row.id)) + 1,
+        methodCode: next?.code ?? '',
+        amount: moneyToInput(Math.max(0, total - paid)),
+      },
+    ]);
+  };
+
+  const blocker = !salesPersonId ? t.needSalesPerson : mobileInvalid ? t.checkMobile : null;
   const canConfirm = blocker === null && settlement?.ok === true;
 
   const paymentStatus = !settlement ? (
@@ -78,11 +106,12 @@ export function CheckoutView({ priced, knownCustomers, onBack, onConfirm }: Chec
       className="gutter mx-auto flex max-w-xl flex-col gap-5 pt-4 pb-10"
       onSubmit={(event) => {
         event.preventDefault();
-        if (!canConfirm || !settlement?.ok || !mobile) return;
+        if (!canConfirm || !settlement?.ok) return;
         writeJson('last-sales-person', salesPersonId);
+        writeJson('last-payment-method', rows[0]?.methodCode ?? '');
         onConfirm({
           salesPersonId,
-          customer: { mobile, name: name.trim() || knownName || '' },
+          customer: { mobile: mobile ?? '', name: name.trim() || knownName || '' },
           payments: settlement.payments,
           change: settlement.change,
         });
@@ -104,6 +133,7 @@ export function CheckoutView({ priced, knownCustomers, onBack, onConfirm }: Chec
       <Field id="sales-person" label={t.salesPerson}>
         <select
           id="sales-person"
+          dir="ltr"
           value={salesPersonId}
           onChange={(event) => setSalesPersonId(event.target.value)}
           className="h-13 w-full rounded-2xl border-2 border-line bg-surface px-3 text-base"
@@ -117,7 +147,76 @@ export function CheckoutView({ priced, knownCustomers, onBack, onConfirm }: Chec
         </select>
       </Field>
 
-      <Field id="customer-mobile" label={t.customerMobile} hint={mobileInput && !mobile ? t.mobileHint : null}>
+      <fieldset className="flex min-w-0 flex-col gap-2">
+        <legend className="mb-1.5 text-sm font-medium text-muted">{t.payment}</legend>
+        {rows.map((row) => (
+          <div key={row.id} className="flex flex-col gap-2 rounded-2xl bg-surface p-3">
+            <div className="flex gap-2">
+              <label htmlFor={`pay-method-${row.id}`} className="sr-only">
+                {t.paymentMethod}
+              </label>
+              <select
+                id={`pay-method-${row.id}`}
+                value={row.methodCode}
+                onChange={(event) => updateRow(row.id, { methodCode: event.target.value })}
+                className="h-12 min-w-0 flex-1 rounded-xl border-2 border-line bg-bg px-3 text-base font-semibold"
+              >
+                {PAYMENT_METHODS.map((method) => (
+                  <option key={method.code} value={method.code}>
+                    {method.label[lang]}
+                  </option>
+                ))}
+              </select>
+              {rows.length > 1 ? (
+                <button
+                  type="button"
+                  aria-label={t.removePayment(methodLabel(row.methodCode))}
+                  onClick={() => setRows((current) => current.filter((other) => other.id !== row.id))}
+                  className="h-12 w-12 shrink-0 rounded-xl bg-surface-2 text-xl text-muted"
+                >
+                  ×
+                </button>
+              ) : null}
+            </div>
+            <div className="flex gap-2">
+              <label htmlFor={`pay-amount-${row.id}`} className="sr-only">
+                {t.amountFor(methodLabel(row.methodCode))}
+              </label>
+              <input
+                id={`pay-amount-${row.id}`}
+                value={row.amount}
+                onChange={(event) => updateRow(row.id, { amount: event.target.value })}
+                onFocus={(event) => event.target.select()}
+                inputMode="decimal"
+                autoComplete="off"
+                dir="ltr"
+                className="tabular h-12 min-w-0 flex-1 rounded-xl border-2 border-line bg-bg px-3 font-mono text-lg focus:border-accent focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => fillRemaining(row.id)}
+                className="h-12 shrink-0 rounded-xl bg-surface-2 px-3 text-sm font-semibold"
+              >
+                {rows.length > 1 ? t.fillRest : t.fullAmount}
+              </button>
+            </div>
+          </div>
+        ))}
+        <div className="flex flex-wrap items-center justify-between gap-2 px-1 text-sm">
+          <span aria-live="polite">{paymentStatus}</span>
+          {rows.length < PAYMENT_METHODS.length ? (
+            <button type="button" onClick={addSplit} className="font-semibold text-accent">
+              {t.splitPayment}
+            </button>
+          ) : null}
+        </div>
+      </fieldset>
+
+      <Field
+        id="customer-mobile"
+        label={`${t.customerMobile} ${t.optional}`}
+        hint={mobileInvalid ? t.mobileHint : knownName ? `${t.returningCustomer}: ${knownName}` : null}
+      >
         <input
           id="customer-mobile"
           value={mobileInput}
@@ -130,7 +229,7 @@ export function CheckoutView({ priced, knownCustomers, onBack, onConfirm }: Chec
         />
       </Field>
 
-      <Field id="customer-name" label={t.customerName} hint={knownName ? `${t.returningCustomer}: ${knownName}` : null}>
+      <Field id="customer-name" label={`${t.customerName} ${t.optional}`}>
         <input
           id="customer-name"
           value={name}
@@ -140,39 +239,6 @@ export function CheckoutView({ priced, knownCustomers, onBack, onConfirm }: Chec
           className="h-13 w-full rounded-2xl border-2 border-line bg-surface px-3 text-base focus:border-accent focus:outline-none"
         />
       </Field>
-
-      <fieldset className="flex min-w-0 flex-col gap-2">
-        <legend className="mb-1.5 text-sm font-medium text-muted">{t.payment}</legend>
-        {PAYMENT_METHODS.map((method) => (
-          <div key={method.code} className="flex items-center gap-2 rounded-2xl bg-surface p-2 ps-4">
-            <label htmlFor={`pay-${method.code}`} className="w-24 shrink-0 font-semibold">
-              {method.label[lang]}
-            </label>
-            <input
-              id={`pay-${method.code}`}
-              aria-label={t.amountFor(method.label[lang])}
-              value={amounts[method.code] ?? ''}
-              onChange={(event) => setAmounts((current) => ({ ...current, [method.code]: event.target.value }))}
-              inputMode="decimal"
-              autoComplete="off"
-              dir="ltr"
-              placeholder="0"
-              className="tabular h-12 min-w-0 flex-1 rounded-xl border-2 border-line bg-bg px-3 font-mono text-lg focus:border-accent focus:outline-none"
-            />
-            <button
-              type="button"
-              onClick={() => fillRest(method.code)}
-              className="h-12 shrink-0 rounded-xl bg-surface-2 px-3 text-sm font-semibold"
-            >
-              {t.fillRest}
-            </button>
-          </div>
-        ))}
-        <div className="flex flex-wrap items-baseline justify-between gap-2 px-1 text-sm" aria-live="polite">
-          {paymentStatus}
-          {tendered > 0 ? <Price amount={tendered} className="text-muted" /> : null}
-        </div>
-      </fieldset>
 
       <div className="flex flex-col gap-2">
         {blocker ? <p className="text-center text-sm text-muted">{blocker}</p> : null}

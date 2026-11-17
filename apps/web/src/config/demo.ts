@@ -24,6 +24,8 @@ export interface CatalogVariant {
 export interface CatalogItem {
   readonly itemCode: string;
   readonly name: string;
+  /** False when the admin excluded the item from discounts (sold at the price after, outside offers). */
+  readonly discountable: boolean;
   readonly variants: readonly CatalogVariant[];
 }
 
@@ -36,26 +38,54 @@ export type Localized = { readonly ar: string; readonly en: string };
 
 export interface BranchPaymentMethod extends PaymentMethod {
   readonly label: Localized;
+  /** Odoo journal for this branch, exported as payment_method, e.g. "VISA BM - OCT2". */
+  readonly journal: string;
 }
 
-export const BRANCH = { code: 'ABC', name: { ar: 'فرع تجريبي', en: 'Demo branch' } as Localized };
+/** Pilot branch. Names and journal suffix as in the branch sheet. */
+export const BRANCH = {
+  code: 'OCT',
+  name: { ar: '6th of October Outlet Mall', en: '6th of October Outlet Mall' } as Localized,
+  journalSuffix: 'OCT2',
+};
 export const DEVICE_NO = 1;
 
 export const PRICING: PricingSettings = { defaultDiscountPercent: 30 };
 export const ACTIVE_OFFER: Offer = { id: 'offer-b4p2', code: 'B4P2', buyQty: 4, payQty: 2 };
 
+// Sample names in the Odoo format (code-name); the real list is loaded from the employees sheet.
 export const EMPLOYEES: readonly Employee[] = [
-  { id: 'emp-101', name: 'Ahmed Samir' },
-  { id: 'emp-102', name: 'Mona Adel' },
-  { id: 'emp-103', name: 'Youssef Hany' },
-  { id: 'emp-104', name: 'Nour Khaled' },
+  { id: 'emp-1001', name: '1001-AHMED SAMIR' },
+  { id: 'emp-1002', name: '1002-MONA ADEL' },
+  { id: 'emp-1003', name: '1003-YOUSSEF HANY' },
+  { id: 'emp-1004', name: '1004-NOUR KHALED' },
 ];
 
-export const PAYMENT_METHODS: readonly BranchPaymentMethod[] = [
-  { code: 'CASH', kind: 'cash', label: { ar: 'كاش', en: 'Cash' } },
-  { code: 'VISA', kind: 'card', label: { ar: 'فيزا', en: 'Visa' } },
-  { code: 'INSTAPAY', kind: 'other', label: { ar: 'إنستاباي', en: 'InstaPay' } },
+/** The 15 Odoo payment methods, most used first. Only Cash Store is cash (gives change). */
+const METHODS: readonly (readonly [code: string, kind: PaymentMethod['kind'], ar?: string])[] = [
+  ['Cash Store', 'cash', 'كاش (Cash Store)'],
+  ['VISA BM', 'card'],
+  ['Paymob Visa', 'card'],
+  ['VISA QNB', 'card'],
+  ['VISA Ahly', 'card'],
+  ['VISA AAIB', 'card'],
+  ['Sales Value', 'other'],
+  ['Sympl Sales', 'other'],
+  ['Souhoola Sales', 'other'],
+  ['Sales_Contact', 'other'],
+  ['Premium Card Under Collection', 'other'],
+  ['Rise', 'other'],
+  ['Tru', 'other'],
+  ['Mylo', 'other'],
+  ['Seven', 'other'],
 ];
+
+export const PAYMENT_METHODS: readonly BranchPaymentMethod[] = METHODS.map(([code, kind, ar]) => ({
+  code,
+  kind,
+  label: { ar: ar ?? code, en: code },
+  journal: `${code} - ${BRANCH.journalSuffix}`,
+}));
 
 const LETTERS = ['XS', 'S', 'M', 'L', 'XL'];
 const WAIST = ['28', '30', '32', '34', '36'];
@@ -63,8 +93,8 @@ const EU = ['36', '38', '40', '42', '44'];
 const KIDS = ['2-3Y', '4-5Y', '6-7Y', '8-9Y'];
 const SHOES = ['38', '39', '40', '41', '42', '43'];
 
-// [item code, name, price before, price after, sizes]
-const ROWS: readonly (readonly [string, string, number, number, readonly string[]])[] = [
+// [item code, name, price before, price after, sizes, takes discounts]
+const ROWS: readonly (readonly [string, string, number, number, readonly string[], boolean?])[] = [
   ['A10234', 'Linen Shirt', 1299, 899, LETTERS],
   ['A10235', 'Oxford Shirt', 1199, 799, LETTERS],
   ['A10412', 'Oversized Tee', 599, 399, LETTERS],
@@ -93,20 +123,23 @@ const ROWS: readonly (readonly [string, string, number, number, readonly string[
   ['S60110', 'Leather Sneakers', 2499, 1699, SHOES],
   ['S60221', 'Canvas Sneakers', 1299, 899, SHOES],
   ['S60332', 'Ankle Boots', 2899, 1999, SHOES],
-  ['X70101', 'Leather Belt', 599, 399, ['S', 'M', 'L']],
-  ['X70202', 'Canvas Tote', 499, 349, ['ONE SIZE']],
+  ['X70101', 'Leather Belt', 599, 399, ['S', 'M', 'L'], false],
+  ['X70202', 'Canvas Tote', 499, 349, ['One Size'], false],
 ];
 
-export const CATALOG: readonly CatalogItem[] = ROWS.map(([itemCode, name, before, after, sizes]) => ({
-  itemCode,
-  name,
-  variants: sizes.map((size) => ({
-    size,
-    barcode: defaultBarcode(itemCode, size),
-    listPrice: fromPounds(before),
-    salePrice: fromPounds(after),
-  })),
-}));
+export const CATALOG: readonly CatalogItem[] = ROWS.map(
+  ([itemCode, name, before, after, sizes, discountable = true]) => ({
+    itemCode,
+    name,
+    discountable,
+    variants: sizes.map((size) => ({
+      size,
+      barcode: defaultBarcode(itemCode, size),
+      listPrice: fromPounds(before),
+      salePrice: fromPounds(after),
+    })),
+  }),
+);
 
 export const CATALOG_BY_CODE: ReadonlyMap<string, CatalogItem> = new Map(CATALOG.map((item) => [item.itemCode, item]));
 

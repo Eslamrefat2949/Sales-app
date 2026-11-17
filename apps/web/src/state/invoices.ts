@@ -14,6 +14,9 @@ export interface InvoiceStore {
 }
 
 /**
+ * Demo only: numbers come from a counter on this phone. In production each phone draws numbers from blocks
+ * reserved on the server, so several phones never issue the same number.
+ *
  * Next sequence for this phone. Uses the stored counter and the highest number already issued, so a
  * lost counter can never produce a duplicate number.
  */
@@ -21,7 +24,7 @@ function nextSequence(invoices: readonly Invoice[]): number {
   const counter = readJson<number>('invoice-counter', 0);
   const highestIssued = invoices.reduce((max, invoice) => {
     const parts = parseInvoiceNumber(invoice.number);
-    return parts && parts.deviceNo === DEVICE_NO ? Math.max(max, parts.seq) : max;
+    return parts && parts.branchCode === BRANCH.code ? Math.max(max, parts.seq) : max;
   }, 0);
   return Math.max(counter, highestIssued) + 1;
 }
@@ -36,7 +39,7 @@ export function useInvoiceStore(): InvoiceStore {
       writeJson('invoice-counter', seq);
       const invoice: Invoice = {
         ...input,
-        number: formatInvoiceNumber({ branchCode: BRANCH.code, deviceNo: DEVICE_NO, seq }),
+        number: formatInvoiceNumber({ branchCode: BRANCH.code, seq }),
         branchCode: BRANCH.code,
         deviceNo: DEVICE_NO,
         status: 'completed',

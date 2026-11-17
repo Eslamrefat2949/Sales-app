@@ -111,22 +111,22 @@ describe('settlePayments', () => {
 });
 
 describe('invoice numbers', () => {
-  it('formats and parses the branch, phone and sequence', () => {
-    expect(formatInvoiceNumber({ branchCode: 'ABC', deviceNo: 2, seq: 42 })).toBe('ABC-M2-00042');
-    expect(parseInvoiceNumber('abc-m2-00042')).toEqual({ branchCode: 'ABC', deviceNo: 2, seq: 42 });
-    expect(parseInvoiceNumber('Shop/0001')).toBeNull();
+  it('formats and parses the branch and sequence', () => {
+    expect(formatInvoiceNumber({ branchCode: 'OCT', seq: 42 })).toBe('OCT-APP-000042');
+    expect(parseInvoiceNumber('oct-app-000042')).toEqual({ branchCode: 'OCT', seq: 42 });
+    expect(parseInvoiceNumber('Mall of Arabia - 12001556')).toBeNull();
   });
 
   it('rejects invalid parts', () => {
-    expect(() => formatInvoiceNumber({ branchCode: 'a b', deviceNo: 1, seq: 1 })).toThrow(DomainError);
-    expect(() => formatInvoiceNumber({ branchCode: 'ABC', deviceNo: 0, seq: 1 })).toThrow(DomainError);
+    expect(() => formatInvoiceNumber({ branchCode: 'a b', seq: 1 })).toThrow(DomainError);
+    expect(() => formatInvoiceNumber({ branchCode: 'OCT', seq: 0 })).toThrow(DomainError);
   });
 });
 
 function invoice(overrides: Partial<Invoice> = {}): Invoice {
   return {
-    number: 'ABC-M1-00001',
-    branchCode: 'ABC',
+    number: 'OCT-APP-000001',
+    branchCode: 'OCT',
     deviceNo: 1,
     createdAt: '2026-11-17T12:00:00.000Z',
     businessDate: '2026-11-17',
@@ -171,9 +171,9 @@ describe('voids', () => {
 
 describe('buildSalesReport', () => {
   const invoices = [
-    invoice({ number: 'ABC-M1-00001' }),
+    invoice({ number: 'OCT-APP-000001' }),
     invoice({
-      number: 'ABC-M1-00002',
+      number: 'OCT-APP-000002',
       salesPersonId: 'emp-2',
       totals: {
         unitCount: 5,
@@ -188,7 +188,7 @@ describe('buildSalesReport', () => {
         { methodCode: 'CASH', amount: 51000 },
       ],
     }),
-    invoice({ number: 'ABC-M2-00001', deviceNo: 2, status: 'voided' }),
+    invoice({ number: 'OCT-APP-000003', deviceNo: 2, status: 'voided' }),
   ];
 
   it('totals completed invoices and lists voids separately', () => {

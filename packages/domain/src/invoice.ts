@@ -3,35 +3,33 @@ import type { PaymentLine } from './payments.ts';
 import type { CartTotals, OfferApplication, PricedUnit } from './pricing.ts';
 
 export interface InvoiceNumberParts {
-  /** Branch short code from the branch mapping, e.g. "ABC". */
+  /** Branch short code from the branch mapping, e.g. "OCT". */
   readonly branchCode: string;
-  /** Number given to the phone the first time it is set up in the branch. Never reused. */
-  readonly deviceNo: number;
-  /** Invoice counter on that phone, starting at 1. */
+  /** Number within the branch. Phones draw these from blocks reserved on the server, so they work offline. */
   readonly seq: number;
 }
 
 const BRANCH_CODE = /^[A-Z0-9]{2,8}$/;
-const INVOICE_NUMBER = /^([A-Z0-9]{2,8})-M(\d+)-(\d{5,})$/;
+const INVOICE_NUMBER = /^([A-Z0-9]{2,8})-APP-(\d{6,})$/;
 
 /**
- * Builds the invoice number, e.g. ABC-M2-00042. Unique without a server round trip because each phone
- * owns its device number, so phones can sell offline. The "M" keeps it apart from Odoo's own POS numbers.
+ * Builds the invoice number, e.g. OCT-APP-000042: the branch code, "APP" so it never clashes with the
+ * cashier's Odoo numbers, then the branch sequence. It is also the Odoo order_ref.
  */
-export function formatInvoiceNumber({ branchCode, deviceNo, seq }: InvoiceNumberParts): string {
+export function formatInvoiceNumber({ branchCode, seq }: InvoiceNumberParts): string {
   if (!BRANCH_CODE.test(branchCode)) {
     throw new DomainError('INVALID_INVOICE', `branch code must be 2-8 capital letters or digits, got "${branchCode}"`);
   }
-  if (!Number.isSafeInteger(deviceNo) || deviceNo < 1 || !Number.isSafeInteger(seq) || seq < 1) {
-    throw new DomainError('INVALID_INVOICE', `device number and sequence must be positive integers`);
+  if (!Number.isSafeInteger(seq) || seq < 1) {
+    throw new DomainError('INVALID_INVOICE', `invoice sequence must be a positive integer, got ${seq}`);
   }
-  return `${branchCode}-M${deviceNo}-${String(seq).padStart(5, '0')}`;
+  return `${branchCode}-APP-${String(seq).padStart(6, '0')}`;
 }
 
 export function parseInvoiceNumber(value: string): InvoiceNumberParts | null {
   const match = INVOICE_NUMBER.exec(value.trim().toUpperCase());
   if (!match) return null;
-  return { branchCode: match[1]!, deviceNo: Number(match[2]), seq: Number(match[3]) };
+  return { branchCode: match[1]!, seq: Number(match[2]) };
 }
 
 export type InvoiceStatus = 'completed' | 'voided';
@@ -45,6 +43,7 @@ export interface Invoice {
   /** Branch business date (YYYY-MM-DD) the sale belongs to. */
   readonly businessDate: string;
   readonly salesPersonId: string;
+  /** Optional: empty strings when the customer gave no details. */
   readonly customer: { readonly mobile: string; readonly name: string };
   readonly lines: readonly PricedUnit[];
   readonly offer: OfferApplication | null;

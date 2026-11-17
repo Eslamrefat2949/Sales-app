@@ -37,7 +37,14 @@ export function SellView({ cart, priced, dispatch, onCheckout, notify }: SellVie
   const addVariant = (item: CatalogItem, variant: CatalogVariant) => {
     dispatch({
       type: 'add',
-      unit: { itemCode: item.itemCode, size: variant.size, listPrice: variant.listPrice, salePrice: variant.salePrice },
+      unit: {
+        barcode: variant.barcode,
+        itemCode: item.itemCode,
+        size: variant.size,
+        listPrice: variant.listPrice,
+        salePrice: variant.salePrice,
+        discountable: item.discountable,
+      },
     });
   };
 
@@ -277,6 +284,7 @@ const TREATMENT_STYLE: Record<PricedUnit['treatment'], string> = {
   default_discount: 'bg-promo-bg text-promo',
   offer_paid: 'bg-paid-bg text-paid',
   offer_free: 'bg-free-bg text-free',
+  no_discount: 'bg-surface-2 text-muted',
 };
 
 function CartList({
@@ -303,7 +311,9 @@ function CartList({
       ? t.treatmentFree
       : unit.treatment === 'offer_paid'
         ? t.treatmentPaid
-        : t.treatmentDefault(unit.discountPercent);
+        : unit.treatment === 'no_discount'
+          ? t.treatmentNoDiscount
+          : t.treatmentDefault(unit.discountPercent);
 
   return (
     <section className="flex flex-col gap-2" aria-label={t.cart}>

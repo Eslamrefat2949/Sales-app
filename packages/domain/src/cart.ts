@@ -28,10 +28,11 @@ export function addUnit(cart: CartState, input: NewCartUnit): CartState {
  * removing a paid piece while keeping the free ones.
  */
 export function removeUnit(cart: CartState, seq: number): CartState {
-  if (!cart.units.some((unit) => unit.seq === seq)) {
+  const removed = cart.units.find((unit) => unit.seq === seq);
+  if (!removed) {
     throw new DomainError('UNIT_NOT_FOUND', `no unit with seq ${seq} in the cart`);
   }
-  const touchesOffer = cart.offer !== null && seq <= cart.offer.appliedAtSeq;
+  const touchesOffer = cart.offer !== null && removed.discountable && seq <= cart.offer.appliedAtSeq;
   return {
     ...cart,
     units: cart.units.filter((unit) => unit.seq !== seq),

@@ -12,6 +12,8 @@ function add(cart: CartState, ...salePrices: number[]): CartState {
   return salePrices.reduce(
     (state, price, index) =>
       addUnit(state, {
+        barcode: `A${price}${index}-M`,
+        discountable: true,
         itemCode: `A${price}${index}`,
         size: 'M',
         listPrice: fromPounds(price * 2),

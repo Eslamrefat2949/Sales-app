@@ -37,13 +37,26 @@ function divideRoundHalfUp(numerator: number, denominator: number): number {
   return Math.floor((numerator * 2 + denominator) / (denominator * 2));
 }
 
+/** Exact amounts are kept in 1/10,000 of a piaster so discounts can be summed before rounding. */
+export const EXACT_PER_PIASTER = 10_000;
+
+/** A price after a percentage discount, exact (no rounding), in 1/10,000 of a piaster. */
+export function discountedExact(price: Money, percent: number): number {
+  assertMoney(price, 'price');
+  assertPercent(percent);
+  const basisPoints = Math.round(percent * 100);
+  return price * (10_000 - basisPoints);
+}
+
+/** Rounds an exact amount half-up to the nearest piaster. */
+export function roundExact(exact: number): Money {
+  return divideRoundHalfUp(exact, EXACT_PER_PIASTER);
+}
+
 /**
  * Applies a percentage discount and rounds the result half-up to the nearest piaster.
  * Percent may have up to two decimals (e.g. 12.5); it is handled in basis points.
  */
 export function applyDiscount(price: Money, percent: number): Money {
-  assertMoney(price, 'price');
-  assertPercent(percent);
-  const basisPoints = Math.round(percent * 100);
-  return divideRoundHalfUp(price * (10_000 - basisPoints), 10_000);
+  return roundExact(discountedExact(price, percent));
 }

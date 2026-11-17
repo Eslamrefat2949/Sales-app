@@ -3,7 +3,7 @@
  * access is guarded and the app keeps working in memory.
  * Demo only: the production app keeps invoices in IndexedDB and syncs them to Supabase.
  */
-const PREFIX = 'ravin-sales:v1:';
+const PREFIX = 'ravin-sales:v2:';
 
 export function readJson<T>(key: string, fallback: T): T {
   try {

@@ -48,6 +48,7 @@ export function ReportView({ invoices, businessDate, onVoid, notify }: ReportVie
           </label>
           <select
             id="report-scope"
+            dir="ltr"
             value={scope}
             onChange={(event) => setScope(event.target.value)}
             className="h-12 rounded-2xl border-2 border-line bg-surface px-3"
@@ -86,12 +87,15 @@ export function ReportView({ invoices, businessDate, onVoid, notify }: ReportVie
         <section className="rounded-3xl bg-surface p-5">
           <h2 className="mb-2 font-semibold">{t.byPaymentMethod}</h2>
           <ul className="flex flex-col gap-1.5">
-            {PAYMENT_METHODS.map((method) => (
+            {PAYMENT_METHODS.filter((method) => (summary.byPaymentMethod[method.code] ?? 0) > 0).map((method) => (
               <li key={method.code} className="flex justify-between">
                 <span>{method.label[lang]}</span>
                 <Price amount={summary.byPaymentMethod[method.code] ?? 0} className="font-semibold" />
               </li>
             ))}
+            {Object.keys(summary.byPaymentMethod).length === 0 ? (
+              <li className="text-sm text-muted">{t.noInvoices}</li>
+            ) : null}
             <li className="mt-1 flex justify-between border-t border-line pt-2 text-danger">
               <span>{t.voided}</span>
               <span className="tabular">
@@ -169,7 +173,7 @@ function buildSummaryText(
     `${t.sales}: ${money(summary.total)}`,
     `${t.invoicesLabel}: ${summary.invoiceCount} · ${t.piecesLabel}: ${summary.unitCount}`,
     `${t.averageInvoice}: ${money(summary.averageInvoice)}`,
-    ...PAYMENT_METHODS.map(
+    ...PAYMENT_METHODS.filter((method) => (summary.byPaymentMethod[method.code] ?? 0) > 0).map(
       (method) => `${methodLabel(method.code)}: ${money(summary.byPaymentMethod[method.code] ?? 0)}`,
     ),
     `${t.voided}: ${t.voidedSummary(summary.voided.count, money(summary.voided.total))}`,
@@ -217,12 +221,19 @@ function InvoiceRow({
       </button>
       {open ? (
         <div className="flex flex-col gap-3 border-t border-line p-3">
-          <div className="text-sm">
-            {invoice.customer.name} ·{' '}
-            <bdi dir="ltr" className="tabular">
-              {invoice.customer.mobile}
-            </bdi>
-          </div>
+          {invoice.customer.mobile || invoice.customer.name ? (
+            <div className="text-sm">
+              {invoice.customer.name}
+              {invoice.customer.mobile ? (
+                <>
+                  {' · '}
+                  <bdi dir="ltr" className="tabular">
+                    {invoice.customer.mobile}
+                  </bdi>
+                </>
+              ) : null}
+            </div>
+          ) : null}
           <ul className="flex flex-col gap-1 text-sm">
             {invoice.lines.map((line) => (
               <li key={line.seq} className="flex justify-between gap-2">
