@@ -8,156 +8,168 @@ to its section.
 
 A mobile-first "line-busting" POS used by all 33 branches during traffic peaks so the cashier line
 stays short. Sales are captured on phones (desktop also supported), and each branch exports its sales
-every night and imports the file into Odoo. Odoo stays the system of record.
+every night and imports the file into Odoo with the **POS Import** module. Odoo stays the system of record.
 
-## 2. Prices
+## 2. Users and access
 
-- Each sellable variant is an **item code + size**, with two prices from Odoo:
-  - **List price** ("before"): the original price.
-  - **Sale price** ("after"): the current selling price. Every discount is calculated from this price.
-- **Default discount:** an extra **30%** on the sale price of every piece that is not in an offer.
-  The percentage is a setting the admin can change without a code change.
-- Money is stored as integer piasters. Percentage discounts round half-up to the nearest piaster
-  (799.00 at 30% = 559.30). **OPEN:** should final prices be rounded to whole pounds?
+| Who                     | Signs in with                       | Can do                                                                                                                                   |
+| ----------------------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Admin                   | email + password                    | Everything, all branches: dashboard, items and prices, offers, payment methods, employees, branch passwords, phones, voids and audit log |
+| Area manager (PROPOSED) | email + password                    | Dashboard and invoices for their own branches only; no price changes                                                                     |
+| Branch                  | branch code (e.g. `ARB`) + password | Sell, today's report, void, download the Odoo file, for its own branch only                                                              |
+
+- One account per branch (33). Several phones can use the same branch account at the same time.
+- A phone signs in once (internet needed the first time) and stays signed in, including offline.
+- The admin sets and resets branch passwords. A reset signs out every phone of that branch at its next
+  connection (for when staff leave).
+- Each phone is registered under its branch at first sign-in. The admin sees every phone, its last
+  sync and its pending invoices, and can block a lost phone.
+- **Sales people are not users.** They are picked on each invoice (section 6).
+
+## 3. Branches
+
+33 branches from the `PAYMENT` sheet. For each: branch code (`LOC`, e.g. `ARB`), Point of Sale name
+(`Mall of Arabia`) and Odoo branch (`BRANCHES - MALL OF ARABIA`). The branch code is the sign-in name
+and the prefix of every invoice number. **OPEN:** branch `OCT` uses `OCT2` in its journal names; the
+invoice prefix uses `OCT` unless told otherwise.
+
+## 4. Payment methods
+
+- 15 methods, all enabled in all 33 branches: VISA BM, Rise, Tru, Sales Value, Sympl Sales, Premium Card
+  Under Collection, Sales_Contact, Souhoola Sales, VISA AAIB, VISA Ahly, VISA QNB, Paymob Visa, Mylo,
+  Seven, Cash Store.
+- The Odoo journal is stored per branch exactly as in the sheet: `<method> - <branch>`, e.g.
+  `VISA BM - ARB` (no `12` prefix).
+- Only **Cash Store** is cash: it may exceed the total and the excess is given back as change. Every other
+  method must be exact.
+- One invoice can be split across several methods.
+- The admin can hide a method for a branch and set the display order (most used first).
+- **OPEN:** Aman Sales, We Vouchers and WePoint appear in Odoo orders but not in the sheet.
+
+## 5. Items and prices
+
+- The admin uploads the item list (Excel). Per size: barcode exactly as in Odoo (`R219822-L`,
+  `O178475-One Size`), item code, name, size, price before (list price), price after (sale price), and
+  whether the item takes discounts. Phones update automatically when online.
+- **Default discount:** an extra **30%** on the price after, for every piece not in an offer. The admin can
+  change the percentage.
+- **Items without discount:** the admin marks them; they are sold at the price after.
+  **OPEN:** they also stay out of the buy 4 pay 2 offer (proposed).
+- **Rounding like Odoo:** each line's discount is calculated exactly and the invoice total is rounded once to
+  the piaster. Checked against 63 real cashier orders: 46 match to the piaster; the rest are exchanges, partial
+  payments or special cases. Rounding per line instead would be off by 0.01 on some orders
+  (1,499.99 + 1,199.99 at 30% = 1,889.99, not 1,889.98).
 
 Implemented in `packages/domain/src/pricing.ts` and `money.ts`.
 
-## 3. Offer: buy X pay Y (currently buy 4 pay 2)
+### Offer: buy X pay Y (currently buy 4 pay 2)
 
-- Applies to **all items**. The seller **activates it manually** on the cart.
-- Pieces are sorted from most to least expensive (by sale price). For every complete group of 4:
-  the 2 most expensive are **paid at the sale price, without the extra 30%**, and the next 2 are
-  **free**. Pieces left over (always the cheapest) get the default 30%.
+- The seller **activates it manually** on the cart.
+- Pieces are sorted from most to least expensive (by price after). For every complete group of 4:
+  the 2 most expensive are **paid at the price after, without the 30%**, and the next 2 are **free**.
+  Pieces left over (always the cheapest) get the default 30%.
 
-| Pieces | Paid (sale price) | Free     | Default 30% |
-| ------ | ----------------- | -------- | ----------- |
-| 4      | #1 #2             | #3 #4    | none        |
-| 5      | #1 #2             | #3 #4    | #5          |
-| 7      | #1 #2             | #3 #4    | #5 #6 #7    |
-| 8      | #1 to #4          | #5 to #8 | none        |
+| Pieces | Paid (price after) | Free     | Default 30% |
+| ------ | ------------------ | -------- | ----------- |
+| 4      | #1 #2              | #3 #4    | none        |
+| 5      | #1 #2              | #3 #4    | #5          |
+| 7      | #1 #2              | #3 #4    | #5 #6 #7    |
+| 8      | #1 to #4           | #5 to #8 | none        |
 
-Worked example (sale prices 1000, 800, 600, 400, 300): 1000 + 800 + 0 + 0 + 210 = **2,010**.
-Without the offer the same cart costs 2,170.
+Worked example (prices after 1000, 800, 600, 400, 300): 1000 + 800 + 0 + 0 + 210 = **2,010**.
 
-- Pieces **added after** the offer was activated get the default 30% and do **not** reshuffle the offer.
-- **PROPOSED:** activating the offer again recalculates it over the whole cart, including the newer pieces.
-- **PROPOSED:** removing a piece that was part of the offer cancels the offer; the whole cart returns to
-  the default 30% until the seller activates it again (prevents removing a paid piece and keeping the free ones).
-- Because paid pieces carry no extra discount, the offer can cost **more** than the default 30%
-  (1000, 900, 150, 150 → 1,900 with the offer vs 1,540 without). Before activating, the app shows
-  both totals side by side.
+- Pieces **added after** the offer was activated get the default 30% and do not reshuffle the offer.
+- **PROPOSED:** activating the offer again recalculates it over the whole cart.
+- **PROPOSED:** removing a piece that was part of the offer cancels the offer.
+- Before activating, the app shows the total with and without the offer, because the offer can cost more
+  than the 30% (1000, 900, 150, 150 → 1,900 vs 1,540).
+- **OPEN:** a cashier order with 6 pieces charged the 3 most expensive and gave 3 free (Mall of Egypt
+  12002172); the rule above gives 2 free and 2 at 30%.
 
 Implemented in `packages/domain/src/offer.ts`, `pricing.ts` and `cart.ts`.
 
-## 4. Adding items to the cart
+## 6. Selling
 
-- **Manual entry is the main method** because many pieces have no barcode.
-  - Item codes are one letter followed by digits (e.g. `A12345`). The phone opens the **numeric
-    keypad**; typing the digits alone finds the item.
-  - Results appear while typing, from the catalog stored on the phone (works offline).
-  - Selecting an item shows **all sizes of that item** (no stock filter) as large buttons; tapping a
-    size adds one piece, tapping again adds another.
-- **Barcode scanner (required).** Barcode format is `ITEMCODE-SIZE`; lookup matches the full barcode
-  exactly (never split on the dash, since sizes like `2-3Y` contain one).
-  - **Phone camera:** the camera stays open and scans continuously. Each new barcode adds one piece with a
-    beep, a vibration and a green frame; an unknown barcode gives an error tone, a red frame and shows the
-    code that was read. The running total stays on screen. A flash button appears where the phone supports it.
-  - The same barcode is ignored while it stays in view and is accepted again after it has been out of view
-    for 1.5 seconds, so one label is never added twice by accident. A second identical piece is scanned
-    again (or added with the size button).
-  - Uses the phone's built-in reader where available (Chrome on Android) and a bundled reading engine
-    elsewhere (iPhone, desktop). The engine ships with the app, so scanning works offline.
-  - **Bluetooth/USB scanners** work too: they type the barcode into the search box and press Enter, which
-    adds the piece directly.
+- **Adding pieces:** camera scanner, Bluetooth/USB scanner, or typing the item code and choosing the size.
+  - Barcode format `ITEMCODE-SIZE`, matched exactly (never split on the dash). Spaces and letter case are
+    ignored when matching, and the original barcode is kept for the export.
+  - The camera stays open and scans continuously: beep, vibration and a green frame per piece; an unknown
+    barcode shows the code read with a red frame. The same label is ignored while it stays in view and
+    accepted again after 1.5 seconds out of view. Works offline (bundled reading engine).
+  - Typing: item codes are a letter plus digits; the numeric keypad opens and typing the digits finds the
+    item; all its sizes appear as large buttons.
+- **Sales person:** required on every invoice, from the employee list (branch employees first, search all).
+  Defaults to the last one picked on that phone.
+- **Customer mobile and name: optional.** A known mobile fills in the name.
+- **Invoice number:** `{BRANCH}-APP-{6 digits}`, e.g. `ARB-APP-000042`. To sell offline, each phone
+  reserves a block of numbers from the server while online and refills it automatically. Numbers are
+  unique and never clash with cashier numbers; they can have gaps and are not in time order across phones,
+  which does not matter to Odoo.
+- The confirmation screen shows the invoice number large enough to photograph. Nothing is sent to the
+  customer.
 
-Search and size ordering are implemented in `packages/domain/src/catalog.ts`, barcode handling in `scan.ts`.
+## 7. Voids (returns)
 
-## 5. Invoice
+- No exchange flow: a return voids the whole invoice and the seller rings up a new one.
+- Any seller can void, on the same day and before export. A reason is required.
+- Voided invoices are excluded from the export and from totals, but stay visible in the report with details.
+- After export, returns are done in Odoo. Voided numbers are never reused.
 
-- **Sales person:** chosen on every invoice from the employee list (branch employees first, search
-  across all). Defaults to the last sales person chosen on that phone.
-- **Customer:** mobile number and name; a known number fills in the name.
-- **Payment:** the payment methods enabled for that branch; one invoice can be split across methods;
-  change is calculated for cash.
-- **Invoice number:** `{BRANCH}-M{device}-{sequence}`, e.g. `ABC-M2-00042`. Each phone gets its own
-  device number the first time it is set up and counts its invoices locally, so numbers are unique even
-  offline and can never clash with Odoo's own POS numbers. A reset phone always gets a new device number.
-  Final format will follow the Odoo upload form.
-- The confirmation screen shows the invoice number in large type so the customer can photograph it.
-  Nothing is sent to the customer.
+## 8. Offline operation
 
-## 6. Voids (returns)
+- The catalog, prices, offers, employees and payment methods are stored on the phone.
+- Every invoice is saved on the phone first and sent automatically when there is a connection. A status
+  indicator shows how many invoices are waiting.
+- The server re-prices every synced invoice with the same pricing code and flags any difference.
+- Risk: unsynced invoices exist only on that phone. The admin sees each phone's last sync.
 
-- There is **no exchange flow**. A return voids the whole invoice; if the customer wants something
-  else, the seller rings up a new invoice.
-- Any seller can void, on the same day and before the invoice is exported. A reason is required.
-- A voided invoice is excluded from the export and from sales totals, but stays in the database and
-  appears in the summary with its details (count and value per seller and per branch).
-- Voided numbers are never reused.
+## 9. Reports
 
-## 7. Offline operation
+- Any time of day, per sales person, per phone (cash is held by whoever holds the phone) and per branch:
+  invoices, pieces, sales, average invoice, pieces per invoice, total per payment method, voids.
+- Copy as text for WhatsApp.
+- Admin dashboard: all branches live, per hour, per branch, per sales person, void rate.
 
-- The app must keep selling without internet. The catalog, prices, offers, employees and payment
-  methods are stored on the phone.
-- Every invoice is saved on the phone first and sent to the server automatically as soon as there is a
-  connection. A status indicator shows how many invoices are waiting.
-- The server re-prices every synced invoice with the same pricing code and flags any difference for
-  review.
-- First sign-in on a phone requires internet.
-- Risk: unsynced invoices exist only on that phone. The admin panel shows each phone's last sync time.
+## 10. Export to Odoo (POS Import)
 
-## 8. Reports
+- The branch downloads an Excel file in the POS Import format: `order_ref`, `product_barcode`, `qty`,
+  `date`, `partner_name`, `partner_phone`, `price_unit`, `payment_amount`, `payment_method`,
+  `salesperson`, plus a discount column (**OPEN:** final column name and format, being prepared).
+- One row per piece with `qty` 1. `price_unit` is the price after; the discount column carries the line
+  discount (30, 0 for an offer-paid piece, 100 for a free piece).
+- Order fields (`date`, customer, `salesperson`) on the first row of each order; each payment on its own
+  row (first payment on the first row, further payments on the following rows).
+- `order_ref` is the invoice number (`ARB-APP-000042`). `payment_method` is the branch journal
+  (`VISA BM - ARB`). `salesperson` is the name exactly as in the sheet (`9173-HABIBA ...`).
+- The export contains every synced invoice not exported yet, so late invoices are never lost. Each
+  download is recorded; a repeat download warns about double import; the screen warns if a phone still
+  has unsynced invoices.
+- **OPEN:** confirm with a test import that the order lands in the right branch with this `order_ref`,
+  and that an empty customer is accepted.
 
-Available at any time (mid-day or end of day), per **sales person** and per **phone** (cash is held
-by whoever holds the phone), plus the branch total:
+## 11. Interface
 
-- Invoice count, pieces, total sales, average invoice value, pieces per invoice
-- Total per payment method (cash, card, ...)
-- Voided invoices: count and value
-- Share as text (e.g. WhatsApp to the branch manager)
+- Arabic and English, switchable from a button at the top; right-to-left layout for Arabic.
 
-## 9. Export to Odoo
+## 12. Infrastructure
 
-- Each branch downloads a file in the exact Odoo import format. **OPEN:** waiting for the upload form.
-- The export contains **every synced invoice not yet exported**, not just "today", so an invoice that
-  syncs late is picked up by the next export instead of being lost.
-- Each download is recorded as a batch (who, when, how many invoices). Exported invoices are locked.
-- Downloading again warns that the batch was already downloaded, to prevent a double import.
-- Before downloading, the screen warns if any phone of the branch still has unsynced invoices.
+- App hosted on Cloudflare Pages, deployed automatically from the GitHub repository.
+- Supabase project **RAVIN SALES APP** (Frankfurt), free plan for development and the pilot; move to Pro
+  (daily backups) before the rollout to all branches.
 
-## 10. Admin panel
+## Data quality notes (employees sheet)
 
-- Live dashboard: sales per branch, per hour and per sales person
-- Invoice search and details, including voids
-- Branches, branch passwords, payment methods per branch
-- Catalog and price upload (from Odoo export), employees, offers, default discount
-- Audit log
-
-## 11. Users and access
-
-- Each branch signs in with its own branch account and password. Several phones (2 to 3 sellers)
-  can use the same branch account at the same time.
-- Admins see every branch. **PROPOSED:** an area manager role that sees only their branches.
-
-## 12. Interface
-
-- Arabic and English, switchable from a button at the top; right-to-left layout for Arabic. The
-  phone remembers the choice.
-
-## 13. Infrastructure
-
-- Supabase project **RAVIN SALES APP** (Frankfurt, `eu-central-1`), separate from the existing projects.
-  It runs on the free plan for development and the pilot. Before the rollout to all branches, move to
-  the Pro plan for daily backups.
-- **OPEN:** hosting for the app itself (needed for the camera, which the shareable demo link blocks).
-  Recommended: Cloudflare Pages (free plan allows commercial use), deployed from the GitHub repository.
+- `8143` and `9346` are listed twice in MNS2: duplicates are removed on import.
+- Five employees appear in two branches (`8610`, `7990`, `8551`, `8590`, `8937`): **PROPOSED** they appear
+  in both branches.
 
 ## Open items
 
-1. Odoo upload form (ideally with a filled example).
-2. Branch names, codes and mapping.
-3. Payment methods per branch and their Odoo names.
-4. Item list from Odoo (item code, name, size, barcode if any, list price, sale price). No branch stock.
-5. Employee list (name, branch, name as in Odoo).
-6. Final price rounding (piasters or whole pounds).
-7. Hosting for the app (Cloudflare Pages recommended).
+1. Updated POS Import form with the discount column.
+2. Item list (with the "takes discount" flag).
+3. Items without discount: also excluded from the offer?
+4. 6-piece offer case (Mall of Egypt 12002172).
+5. Aman Sales, We Vouchers, WePoint.
+6. Branch `OCT` invoice prefix (`OCT` or `OCT2`).
+7. Area manager role: wanted, and which branches per manager.
+8. Admin emails.
