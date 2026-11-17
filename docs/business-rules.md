@@ -217,7 +217,7 @@ Implemented in `packages/domain/src/offer.ts`, `pricing.ts` and `cart.ts`.
 
 ## PINs and staff (18 Nov 2026, before go-live)
 
-- **PINs are 4 to 6 digits.** Every branch starts on the temporary PIN **1234**. At the first sign-in
+- **PINs are 4 to 8 digits.** Every branch starts on the temporary PIN **1234**. At the first sign-in
   the app asks the branch to choose its own PIN (typed twice) before anything else opens. Easy PINs are
   refused: 1234, one digit repeated (0000, 1111…) and straight runs (2345, 9876…).
 - **Changing the PIN later:** Account menu (top of the screen) > Change PIN: current PIN, new PIN,
@@ -229,6 +229,14 @@ Implemented in `packages/domain/src/offer.ts`, `pricing.ts` and `cart.ts`.
   (with the number; existing names are suggested), tap Add. Someone already in another branch is added
   to this one too. The branch's list shows everyone with a Remove button. Branch phones see the change
   the next time the app opens. The staff sheet stays for changing many people at once.
+
+- **Admins** also start on a temporary PIN (kept privately with management, never in this repository)
+  and choose their own PIN at the first sign-in. A new PIN must differ from the current one.
+  "Back to temporary" in Management > PINs puts an account back on the temporary PIN of its kind.
+- **Training branch `TST` ("Training Branch (تدريب)")** is for explaining the app to staff. It sells
+  like a real branch with two training sales people, but it is left out of the management dashboard
+  and its sheets are never imported into Odoo. Put it back on 1234 from the PINs tab before each
+  training to show the first sign-in again.
 
 ## Open items
 
