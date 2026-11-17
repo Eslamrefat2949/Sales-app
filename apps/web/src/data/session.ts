@@ -46,7 +46,7 @@ export async function signInWithPin(accountId: string, pin: string): Promise<Sig
   return error ? { ok: false, reason: 'FAILED' } : { ok: true };
 }
 
-export type ChangePinError = 'WRONG_PIN' | 'PIN_WEAK' | 'PIN_FORMAT' | 'LOCKED' | 'OFFLINE' | 'FAILED';
+export type ChangePinError = 'WRONG_PIN' | 'PIN_WEAK' | 'PIN_SAME' | 'PIN_FORMAT' | 'LOCKED' | 'OFFLINE' | 'FAILED';
 
 /**
  * Changes the PIN of the signed-in account, then signs this phone in again with the new PIN (a new
@@ -60,7 +60,7 @@ export async function changeOwnPin(
   const { error } = await supabase.rpc('change_own_pin', { p_current: current, p_new: next });
   if (error) {
     const code = errorCode(error);
-    const known: readonly ChangePinError[] = ['WRONG_PIN', 'PIN_WEAK', 'PIN_FORMAT', 'LOCKED', 'OFFLINE'];
+    const known: readonly ChangePinError[] = ['WRONG_PIN', 'PIN_WEAK', 'PIN_SAME', 'PIN_FORMAT', 'LOCKED', 'OFFLINE'];
     return { ok: false, reason: known.includes(code as ChangePinError) ? (code as ChangePinError) : 'FAILED' };
   }
   const again = await signInWithPin(accountId, next);

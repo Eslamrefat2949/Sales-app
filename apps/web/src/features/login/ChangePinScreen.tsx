@@ -17,7 +17,7 @@ interface ChangePinScreenProps {
   readonly accountId: string;
   readonly accountLabel: string;
   /**
-   * forced: first sign-in on the default PIN 1234, nothing else is possible until a PIN is chosen.
+   * forced: first sign-in on a temporary PIN, nothing else is possible until a PIN is chosen.
    * voluntary: from the account menu, the current PIN is asked first and the screen can be closed.
    */
   readonly mode: 'forced' | 'voluntary';
@@ -69,6 +69,7 @@ export function ChangePinScreen({ accountId, accountLabel, mode, onDone, onCance
     }
     if (result.reason === 'WRONG_PIN') return fail(t.pinWrongCurrent, 'current');
     if (result.reason === 'PIN_WEAK') return fail(t.pinWeak, 'new');
+    if (result.reason === 'PIN_SAME') return fail(t.pinSame, 'new');
     fail(
       result.reason === 'LOCKED' ? t.pinLocked : result.reason === 'OFFLINE' ? t.pinOffline : t.genericError,
       mode === 'forced' ? 'new' : 'current',

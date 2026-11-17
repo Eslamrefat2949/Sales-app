@@ -3,7 +3,7 @@ import { useI18n } from '../i18n/I18nProvider.tsx';
 import { Icon } from './Icon.tsx';
 
 export const PIN_MIN = 4;
-export const PIN_MAX = 6;
+export const PIN_MAX = 8;
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'back', '0', 'ok'] as const;
 type Key = (typeof KEYS)[number];
 
@@ -14,7 +14,7 @@ export function isPinFormat(pin: string): boolean {
 interface PinPadProps {
   readonly value: string;
   readonly onChange: (pin: string) => void;
-  /** Called with ✓, Enter, or straight away when the sixth digit is typed. */
+  /** Called with ✓, Enter, or straight away when the last allowed digit is typed. */
   readonly onSubmit: (pin: string) => void;
   readonly disabled?: boolean;
   readonly busy?: boolean;
@@ -26,7 +26,7 @@ interface PinPadProps {
 }
 
 /**
- * Large on-screen keypad for a 4 to 6 digit PIN: dots for the digits typed, ✓ to confirm.
+ * Large on-screen keypad for a 4 to 8 digit PIN: dots for the digits typed, ✓ to confirm.
  * Also works with a hardware keyboard (digits, Backspace, Enter).
  */
 export function PinPad({

@@ -789,7 +789,7 @@ function Pins() {
 
   const save = async (account: AccountRow) => {
     const value = normalizeDigits(pin);
-    if (!/^\d{4,6}$/.test(value)) return notify(t.pinFormat, 'error');
+    if (!/^\d{4,8}$/.test(value)) return notify(t.pinFormat, 'error');
     try {
       await setAccountPin(account.id, value);
       notify(t.pinSet(account.label), 'success');
@@ -855,7 +855,7 @@ function Pins() {
             </div>
             {resetting === account.id ? (
               <div className="animate-rise flex flex-col gap-2 rounded-xl bg-promo-bg p-3">
-                <p className="text-sm text-promo">{t.resetPinConfirm(account.label)}</p>
+                <p className="text-sm text-promo">{t.resetPinConfirm(account.label, account.kind === 'branch')}</p>
                 <button
                   type="button"
                   onClick={() => void reset(account)}
@@ -877,7 +877,7 @@ function Pins() {
                   value={pin}
                   onChange={(event) => setPin(event.target.value)}
                   inputMode="numeric"
-                  maxLength={6}
+                  maxLength={8}
                   minLength={4}
                   autoFocus
                   dir="ltr"
