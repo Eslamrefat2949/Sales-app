@@ -2,6 +2,9 @@
 -- transaction, never as a direct table write from the app. Errors use stable codes in the message
 -- (e.g. VOID_ALREADY_EXPORTED) that the app translates.
 
+alter table public.accounts add column pin_changed_at timestamptz;
+comment on column public.accounts.pin_changed_at is 'Last PIN change; wrong attempts before it no longer count towards the lock.';
+
 -- ---------------------------------------------------------------------------------------------
 -- Sign-in with "pick from a list + 6-digit PIN"
 -- ---------------------------------------------------------------------------------------------
@@ -28,9 +31,11 @@ declare
   v_hash text;
   v_email text;
   v_last_success timestamptz;
+  v_pin_changed timestamptz;
   v_failures integer;
 begin
-  select a.user_id into v_user_id from public.accounts a where a.id = p_account_id and a.is_active;
+  select a.user_id, a.pin_changed_at into v_user_id, v_pin_changed
+  from public.accounts a where a.id = p_account_id and a.is_active;
   if v_user_id is null then
     return jsonb_build_object('ok', false, 'reason', 'UNKNOWN_ACCOUNT');
   end if;
@@ -41,7 +46,8 @@ begin
   from public.login_attempts
   where account_id = p_account_id and not succeeded
     and attempted_at > now() - interval '15 minutes'
-    and attempted_at > coalesce(v_last_success, '-infinity'::timestamptz);
+    and attempted_at > greatest(coalesce(v_last_success, '-infinity'::timestamptz),
+                                coalesce(v_pin_changed, '-infinity'::timestamptz));
   if v_failures >= 5 then
     return jsonb_build_object('ok', false, 'reason', 'LOCKED');
   end if;
@@ -99,10 +105,12 @@ begin
     update auth.users
     set encrypted_password = extensions.crypt(p_pin, extensions.gen_salt('bf')), updated_at = now()
     where id = v_account.user_id;
-    delete from auth.sessions where user_id = v_account.user_id;
+    -- Sign out every phone of this account: expire its sessions so their refresh tokens stop working.
+    update auth.sessions set not_after = now()
+    where user_id = v_account.user_id and (not_after is null or not_after > now());
   end if;
 
-  delete from public.login_attempts where account_id = p_account_id;
+  update public.accounts set pin_changed_at = now() where id = p_account_id;
 end;
 $$;
 
@@ -539,24 +547,3 @@ begin
   order by coalesce(sum(i.total) filter (where i.status = 'completed'), 0) desc, b.code;
 end;
 $$;
-
--- ---------------------------------------------------------------------------------------------
--- Who may call what
--- ---------------------------------------------------------------------------------------------
-revoke execute on all functions in schema public from public, anon;
-revoke execute on function private.set_account_pin(uuid, text) from public, anon, authenticated;
-grant execute on function public.login_directory() to anon, authenticated;
-grant execute on function public.verify_pin(uuid, text) to anon, authenticated;
-grant execute on function public.admin_set_pin(uuid, text) to authenticated;
-grant execute on function public.app_bootstrap() to authenticated;
-grant execute on function public.catalog_snapshot() to authenticated;
-grant execute on function public.register_device() to authenticated;
-grant execute on function public.reserve_invoice_numbers(uuid, integer) to authenticated;
-grant execute on function public.device_heartbeat(uuid, integer) to authenticated;
-grant execute on function public.sync_invoice(jsonb) to authenticated;
-grant execute on function public.void_invoice(text, text) to authenticated;
-grant execute on function public.create_export_batch(uuid) to authenticated;
-grant execute on function public.record_export_download(uuid) to authenticated;
-grant execute on function public.upsert_products(jsonb) to authenticated;
-grant execute on function public.set_items_discountable(text[], boolean) to authenticated;
-grant execute on function public.branch_sales_today() to authenticated;

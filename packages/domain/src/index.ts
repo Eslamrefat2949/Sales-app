@@ -38,3 +38,13 @@ export {
 } from './invoice.ts';
 export { buildSalesReport, type SalesReport, type SalesSummary } from './reports.ts';
 export { createScanGate, defaultBarcode, normalizeBarcode } from './scan.ts';
+export {
+  findItemListColumns,
+  itemCodeOf,
+  prepareCatalogImport,
+  readItemListRows,
+  type ItemListColumns,
+  type CatalogImport,
+  type CatalogProduct,
+  type CatalogSourceRow,
+} from './catalog-import.ts';
