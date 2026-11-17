@@ -1,0 +1,13 @@
+{
+  "name": "ravin-sales-app",
+  "private": true,
+  "description": "RAVIN Sales App: mobile-first line-busting POS for all branches, exporting daily sales to Odoo.",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck"
+  }
+}
