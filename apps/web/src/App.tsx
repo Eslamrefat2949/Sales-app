@@ -1,160 +1,98 @@
-import type { Invoice } from '@ravin-sales/domain';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { BRANCH, DEVICE_NO } from './config/demo.ts';
-import { CheckoutView, type CheckoutResult } from './features/checkout/CheckoutView.tsx';
-import { ConfirmationView } from './features/checkout/ConfirmationView.tsx';
-import { ReportView } from './features/report/ReportView.tsx';
-import { SellView } from './features/sell/SellView.tsx';
+import type { Session } from '@supabase/supabase-js';
+import { useEffect, useState } from 'react';
+import { ToastProvider } from './components/Toast.tsx';
+import { loadAppData, type LoadedData } from './data/appData.ts';
+import { signOut } from './data/session.ts';
+import { AdminApp } from './features/admin/AdminApp.tsx';
+import { BranchApp } from './features/branch/BranchApp.tsx';
+import { LoginScreen, Wordmark } from './features/login/LoginScreen.tsx';
 import { useI18n } from './i18n/I18nProvider.tsx';
-import { businessDateOf } from './lib/format.ts';
-import { useCart } from './state/cart.ts';
-import { useInvoiceStore } from './state/invoices.ts';
-
-type View =
-  | { readonly name: 'sell' }
-  | { readonly name: 'report' }
-  | { readonly name: 'checkout' }
-  | { readonly name: 'done'; readonly invoice: Invoice };
-
-function useOnline(): boolean {
-  const [online, setOnline] = useState(() => navigator.onLine);
-  useEffect(() => {
-    const update = () => setOnline(navigator.onLine);
-    window.addEventListener('online', update);
-    window.addEventListener('offline', update);
-    return () => {
-      window.removeEventListener('online', update);
-      window.removeEventListener('offline', update);
-    };
-  }, []);
-  return online;
-}
-
-function useToast(): [string | null, (message: string) => void] {
-  const [message, setMessage] = useState<string | null>(null);
-  const timer = useRef<number | undefined>(undefined);
-  const notify = useCallback((next: string) => {
-    setMessage(next);
-    window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => setMessage(null), 1600);
-  }, []);
-  return [message, notify];
-}
+import { supabase } from './lib/supabase.ts';
 
 export function App() {
-  const { t, lang, toggleLanguage } = useI18n();
-  const [view, setView] = useState<View>({ name: 'sell' });
-  const { cart, priced, dispatch } = useCart();
-  const store = useInvoiceStore();
-  const online = useOnline();
-  const [toast, notify] = useToast();
-  const businessDate = businessDateOf(new Date());
+  const [session, setSession] = useState<Session | null | undefined>(undefined);
 
-  const confirm = (result: CheckoutResult) => {
-    const invoice = store.createInvoice({
-      createdAt: new Date().toISOString(),
-      businessDate,
-      salesPersonId: result.salesPersonId,
-      customer: result.customer,
-      lines: priced.units,
-      offer: cart.offer,
-      totals: priced.totals,
-      payments: result.payments,
-      change: result.change,
-    });
-    dispatch({ type: 'clear' });
-    setView({ name: 'done', invoice });
-    window.scrollTo(0, 0);
-  };
-
-  const showTabs = view.name === 'sell' || view.name === 'report';
+  useEffect(() => {
+    void supabase.auth.getSession().then(({ data }) => setSession(data.session));
+    const { data } = supabase.auth.onAuthStateChange((_event, next) => setSession(next));
+    return () => data.subscription.unsubscribe();
+  }, []);
 
   return (
-    <div className="flex min-h-full flex-col">
-      <header className="top-safe sticky z-30 border-b border-line bg-surface">
-        <div className="gutter mx-auto flex max-w-3xl items-center gap-3 py-2.5">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <span className="text-lg font-bold tracking-tight">{t.appName}</span>
-              <span className="rounded-full bg-promo-bg px-2 py-0.5 text-[11px] font-semibold text-promo">
-                {t.demoData}
-              </span>
-            </div>
-            <div className="truncate text-xs text-muted">
-              {BRANCH.name[lang]} · <bdi dir="ltr">{t.branchDevice(BRANCH.code, DEVICE_NO)}</bdi>
-            </div>
-          </div>
-          <span
-            className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${online ? 'bg-free-bg text-free' : 'bg-danger-bg text-danger'}`}
-          >
-            <span className={`h-2 w-2 rounded-full ${online ? 'bg-free' : 'bg-danger'}`} aria-hidden="true" />
-            {online ? t.online : t.offline}
-          </span>
+    <ToastProvider>
+      {session === undefined ? (
+        <Splash />
+      ) : session ? (
+        <SignedIn key={session.user.id} userId={session.user.id} />
+      ) : (
+        <LoginScreen />
+      )}
+    </ToastProvider>
+  );
+}
+
+type LoadState =
+  | { readonly status: 'loading'; readonly step: 'settings' | 'catalog' }
+  | { readonly status: 'error' }
+  | { readonly status: 'ready'; readonly data: LoadedData };
+
+function SignedIn({ userId }: { readonly userId: string }) {
+  const [state, setState] = useState<LoadState>({ status: 'loading', step: 'settings' });
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadAppData(userId, (step) => !cancelled && setState({ status: 'loading', step }))
+      .then((data) => !cancelled && setState({ status: 'ready', data }))
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        // The account was switched off or its PIN changed: back to the sign-in screen.
+        if (String((error as { message?: string })?.message ?? '').startsWith('NO_ACCOUNT')) void signOut();
+        else setState({ status: 'error' });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, attempt]);
+
+  if (state.status !== 'ready') {
+    return <Splash state={state} onRetry={() => setAttempt((value) => value + 1)} />;
+  }
+  return state.data.config.account.kind === 'admin' ? <AdminApp data={state.data} /> : <BranchApp data={state.data} />;
+}
+
+function Splash({ state, onRetry }: { readonly state?: LoadState; readonly onRetry?: () => void }) {
+  const { t } = useI18n();
+  return (
+    <div className="hero gutter pt-safe flex min-h-full flex-col items-center justify-center gap-6 text-center">
+      <div className="animate-pop scale-125">
+        <Wordmark />
+      </div>
+      {state?.status === 'error' ? (
+        <div className="flex max-w-xs flex-col items-center gap-3">
+          <p>{t.loadFailed}</p>
           <button
             type="button"
-            onClick={toggleLanguage}
-            lang={lang === 'ar' ? 'en' : 'ar'}
-            className="rounded-full border border-line px-3 py-1.5 text-sm font-semibold"
+            onClick={onRetry}
+            className="press rounded-2xl bg-white px-5 py-2.5 font-semibold text-primary"
           >
-            {t.otherLanguage}
+            {t.retry}
+          </button>
+          <button type="button" onClick={() => void signOut()} className="text-sm text-white/80 underline">
+            {t.signOut}
           </button>
         </div>
-        {showTabs ? (
-          <nav className="gutter mx-auto flex max-w-3xl gap-1 pb-2" aria-label={t.appName}>
-            {(['sell', 'report'] as const).map((name) => (
-              <button
-                key={name}
-                type="button"
-                onClick={() => setView(name === 'sell' ? { name: 'sell' } : { name: 'report' })}
-                aria-current={view.name === name ? 'page' : undefined}
-                className={`flex-1 rounded-xl py-2 text-sm font-semibold ${view.name === name ? 'bg-accent text-accent-fg' : 'bg-surface-2 text-muted'}`}
-              >
-                {name === 'sell' ? t.tabSell : t.tabReport}
-              </button>
-            ))}
-          </nav>
-        ) : null}
-      </header>
-
-      <main className="mx-auto w-full max-w-3xl flex-1">
-        {view.name === 'sell' ? (
-          <SellView
-            cart={cart}
-            priced={priced}
-            dispatch={dispatch}
-            onCheckout={() => setView({ name: 'checkout' })}
-            notify={notify}
+      ) : (
+        <div className="flex flex-col items-center gap-3">
+          <span
+            className="h-9 w-9 animate-spin rounded-full border-4 border-white/30 border-t-white"
+            aria-hidden="true"
           />
-        ) : view.name === 'checkout' ? (
-          <CheckoutView
-            priced={priced}
-            knownCustomers={store.knownCustomers}
-            onBack={() => setView({ name: 'sell' })}
-            onConfirm={confirm}
-          />
-        ) : view.name === 'done' ? (
-          <ConfirmationView invoice={view.invoice} onNewSale={() => setView({ name: 'sell' })} />
-        ) : (
-          <ReportView
-            invoices={store.invoices}
-            businessDate={businessDate}
-            onVoid={(number, reason) => {
-              store.voidInvoice(number, businessDate, reason);
-              notify(t.voidedToast(number));
-            }}
-            notify={notify}
-          />
-        )}
-      </main>
-
-      <div
-        aria-live="polite"
-        className="pointer-events-none fixed inset-x-0 top-[calc(env(safe-area-inset-top,0px)+7rem)] z-50 flex justify-center px-4"
-      >
-        {toast ? (
-          <div className="rounded-full bg-fg px-4 py-2 text-sm font-medium text-bg shadow-lg">{toast}</div>
-        ) : null}
-      </div>
+          <p className="text-sm text-white/85">
+            {state?.status === 'loading' && state.step === 'catalog' ? t.loadingCatalog : t.loadingSettings}
+          </p>
+        </div>
+      )}
     </div>
   );
 }

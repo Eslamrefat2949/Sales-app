@@ -7,7 +7,7 @@ export function Price({ amount, className = '' }: { readonly amount: Money; read
   const { t } = useI18n();
   return (
     <bdi className={`tabular whitespace-nowrap ${className}`}>
-      {formatMoney(amount)} <span className="text-[0.8em] font-normal text-muted">{t.currency}</span>
+      {formatMoney(amount)} <span className="text-[0.72em] font-normal opacity-70">{t.currency}</span>
     </bdi>
   );
 }

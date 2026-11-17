@@ -165,6 +165,26 @@ Implemented in `packages/domain/src/offer.ts`, `pricing.ts` and `cart.ts`.
 - Five employees appear in two branches (`8610`, `7990`, `8551`, `8590`, `8937`): **PROPOSED** they appear
   in both branches.
 
+## Pilot decisions (17 Nov 2026)
+
+- **Sign-in:** pick the branch (or the admin name) from a list and type a 6-digit PIN on an on-screen
+  keypad. Five wrong PINs lock the account for 15 minutes. All four admins (Eslam Refat, Sameh Ahmed,
+  Mohamed Yousef, Ahmed Hamdy) have full rights and see every branch. Admins change any PIN from the
+  app; a change signs out that account's phones.
+- **Offer or 30% is the seller's choice** with the customer: the offer sheet shows both totals and
+  nothing changes until the seller taps Apply. Pieces inside the offer never take the 30%.
+- **Scanner:** scan, the camera pauses and shows the piece (code, size, prices, price after 30%),
+  the seller taps Done (or Skip), the camera resumes for the next piece. The screen stays awake.
+- **Cart:** the same piece priced the same way is one line with a count and +/- buttons.
+- **Close of day:** the report shows sales since the last close. "Close the day" locks every invoice
+  not closed yet into a batch, downloads the Odoo sheet and starts the count from zero. Every close is
+  kept in a history and can be downloaded again (each repeat is counted and warns about double import).
+- **Several phones on one branch account** sell at the same time without conflict: each phone uses its
+  own reserved invoice numbers.
+- **Design:** bright blue, friendly style following the owner's reference mock-ups (gradient header,
+  white rounded cards, pastel stat tiles, light motion).
+- A hidden-from-production test branch `TST` exists for training and testing.
+
 ## Open items
 
 1. Updated POS Import form with the discount column.

@@ -1,78 +1,57 @@
 @import 'tailwindcss';
 
 /*
-  Layout: one-screen phone app. Sticky header, scrolling work area, fixed action bar at the thumb.
-  Palette: cool retail neutrals with an ink-blue accent; semantic colours mark how each piece is priced
-  (amber = regular discount, blue = paid in offer, green = free).
+  RAVIN Sales: a friendly, bright store app (reference: the owner's POS mock-ups).
+  Layout: blue gradient header with the page title, white rounded cards on a cool light background,
+  pastel stat tiles, a floating action bar at the thumb. One light look on purpose: stores are bright.
+  Colour says how each piece is priced: amber = regular discount, blue = paid in offer, green = free.
+  Type: Readex Pro for titles and money, IBM Plex Sans Arabic for text, IBM Plex Mono for codes.
 */
 :root {
-  --bg: #f2f4f6;
+  color-scheme: light;
+  --bg: #f2f5fb;
   --surface: #ffffff;
-  --surface-2: #e9edf1;
-  --fg: #111a22;
-  --muted: #59656f;
-  --line: #d6dce2;
-  --accent: #1d3b57;
+  --surface-2: #eef2f8;
+  --fg: #0f1b2d;
+  --muted: #6b7a90;
+  --line: #e3e9f2;
+
+  --primary: #2563eb;
+  --primary-2: #4f8ff7;
+  --primary-deep: #1d4ed8;
+  --primary-fg: #ffffff;
+  --primary-soft: #e8f0ff;
+
+  --accent: #2563eb;
   --accent-fg: #ffffff;
-  --promo: #8a4f00;
-  --promo-bg: #fcefd9;
-  --paid: #1d4f8a;
-  --paid-bg: #e2ecf8;
-  --free: #136b42;
-  --free-bg: #dff3e7;
-  --danger: #b42318;
-  --danger-bg: #fdeceb;
-  --scrim: rgb(9 14 19 / 0.45);
-  /* The camera view stays dark in both themes. */
+
+  --tile-blue: #eaf2ff;
+  --tile-blue-fg: #2563eb;
+  --tile-green: #e6f7ee;
+  --tile-green-fg: #15803d;
+  --tile-amber: #fff3e2;
+  --tile-amber-fg: #c2620a;
+  --tile-purple: #f1ecff;
+  --tile-purple-fg: #6d3fe0;
+
+  --promo: #b45309;
+  --promo-bg: #fff3e2;
+  --paid: #1d4ed8;
+  --paid-bg: #e8f0ff;
+  --free: #15803d;
+  --free-bg: #e6f7ee;
+  --danger: #dc2626;
+  --danger-bg: #fdecec;
+
+  --scrim: rgb(15 27 45 / 0.45);
+  --shadow: 0 1px 2px rgb(15 27 45 / 0.04), 0 10px 30px -14px rgb(37 99 235 / 0.28);
+  /* The camera view stays dark. */
   --camera: #05080b;
   --camera-fg: #f4f7f9;
 
   --font-ui: 'IBM Plex Sans Arabic', 'Segoe UI', Tahoma, system-ui, sans-serif;
+  --font-display: 'Readex Pro', 'IBM Plex Sans Arabic', 'Segoe UI', system-ui, sans-serif;
   --font-code: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    --bg: #0d1318;
-    --surface: #151d24;
-    --surface-2: #1d2731;
-    --fg: #e6ebef;
-    --muted: #95a3af;
-    --line: #2a3742;
-    --accent: #8fbbe3;
-    --accent-fg: #0d1318;
-    --promo: #f1b65c;
-    --promo-bg: #33240d;
-    --paid: #93bdf0;
-    --paid-bg: #14273d;
-    --free: #67d29a;
-    --free-bg: #10301f;
-    --danger: #f3786d;
-    --danger-bg: #3a1614;
-    --scrim: rgb(0 0 0 / 0.6);
-    color-scheme: dark;
-  }
-}
-
-:root[data-theme='dark'] {
-  --bg: #0d1318;
-  --surface: #151d24;
-  --surface-2: #1d2731;
-  --fg: #e6ebef;
-  --muted: #95a3af;
-  --line: #2a3742;
-  --accent: #8fbbe3;
-  --accent-fg: #0d1318;
-  --promo: #f1b65c;
-  --promo-bg: #33240d;
-  --paid: #93bdf0;
-  --paid-bg: #14273d;
-  --free: #67d29a;
-  --free-bg: #10301f;
-  --danger: #f3786d;
-  --danger-bg: #3a1614;
-  --scrim: rgb(0 0 0 / 0.6);
-  color-scheme: dark;
 }
 
 @theme inline {
@@ -82,8 +61,21 @@
   --color-fg: var(--fg);
   --color-muted: var(--muted);
   --color-line: var(--line);
+  --color-primary: var(--primary);
+  --color-primary-2: var(--primary-2);
+  --color-primary-deep: var(--primary-deep);
+  --color-primary-fg: var(--primary-fg);
+  --color-primary-soft: var(--primary-soft);
   --color-accent: var(--accent);
   --color-accent-fg: var(--accent-fg);
+  --color-tile-blue: var(--tile-blue);
+  --color-tile-blue-fg: var(--tile-blue-fg);
+  --color-tile-green: var(--tile-green);
+  --color-tile-green-fg: var(--tile-green-fg);
+  --color-tile-amber: var(--tile-amber);
+  --color-tile-amber-fg: var(--tile-amber-fg);
+  --color-tile-purple: var(--tile-purple);
+  --color-tile-purple-fg: var(--tile-purple-fg);
   --color-promo: var(--promo);
   --color-promo-bg: var(--promo-bg);
   --color-paid: var(--paid);
@@ -96,7 +88,9 @@
   --color-camera: var(--camera);
   --color-camera-fg: var(--camera-fg);
   --font-sans: var(--font-ui);
+  --font-display: var(--font-display);
   --font-mono: var(--font-code);
+  --shadow-card: var(--shadow);
 }
 
 html,
@@ -112,16 +106,17 @@ body {
   font-size: 16px;
   line-height: 1.5;
   -webkit-tap-highlight-color: transparent;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* Paints the strip above the sticky header on phones with a notch. */
+/* Paints the strip above the header on phones with a notch. */
 body::before {
   content: '';
   position: fixed;
   inset: 0 0 auto;
   height: env(safe-area-inset-top, 0px);
   z-index: 10;
-  background: var(--surface);
+  background: var(--primary);
 }
 
 @layer utilities {
@@ -141,11 +136,84 @@ body::before {
   .tabular {
     font-variant-numeric: tabular-nums;
   }
+  .hero {
+    background:
+      radial-gradient(circle at 92% -10%, rgb(255 255 255 / 0.22) 0 90px, transparent 91px),
+      radial-gradient(circle at 8% 120%, rgb(255 255 255 / 0.12) 0 110px, transparent 111px),
+      linear-gradient(135deg, var(--primary-deep), var(--primary) 45%, var(--primary-2));
+    color: var(--primary-fg);
+  }
+  /* Receipt edge: half-circle notches cut into both sides of the ticket. */
+  .ticket {
+    --notch: 14px;
+    mask:
+      radial-gradient(circle var(--notch) at 0 64%, #0000 98%, #000) left / 51% 100% no-repeat,
+      radial-gradient(circle var(--notch) at 100% 64%, #0000 98%, #000) right / 51% 100% no-repeat;
+  }
+  .press {
+    transition: transform 120ms ease;
+  }
+  .press:active {
+    transform: scale(0.97);
+  }
 }
 
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--primary);
   outline-offset: 2px;
+}
+
+@keyframes scan-line {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(var(--travel, 140px));
+  }
+}
+
+@keyframes rise {
+  from {
+    transform: translateY(14px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+@keyframes pop {
+  0% {
+    transform: scale(0.92);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.03);
+    opacity: 1;
+  }
+  100% {
+    transform: none;
+  }
+}
+
+@keyframes flash-in {
+  from {
+    background-color: var(--primary-soft);
+  }
+  to {
+    background-color: var(--surface);
+  }
+}
+
+.animate-rise {
+  animation: rise 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.animate-pop {
+  animation: pop 320ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.animate-flash {
+  animation: flash-in 900ms ease-out both;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -154,5 +222,6 @@ body::before {
   *::after {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
   }
 }

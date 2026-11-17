@@ -1,246 +1,417 @@
-import { buildSalesReport, DomainError, voidBlocker, type Invoice, type SalesSummary } from '@ravin-sales/domain';
-import { useMemo, useState } from 'react';
+import { buildSalesReport, type SalesSummary } from '@ravin-sales/domain';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Icon } from '../../components/Icon.tsx';
 import { Code, Price } from '../../components/Price.tsx';
-import { BRANCH, CATALOG_BY_CODE, EMPLOYEES, PAYMENT_METHODS } from '../../config/demo.ts';
+import { Sheet } from '../../components/Sheet.tsx';
+import { AnimatedMoney, StatTile } from '../../components/Tiles.tsx';
+import { useNotify } from '../../components/Toast.tsx';
+import type { AppConfig } from '../../data/appData.ts';
+import {
+  downloadBatchAgain,
+  exportNewBatch,
+  fetchOpenInvoices,
+  listExportBatches,
+  mergeWithPending,
+  previewExport,
+  voidInvoiceOnServer,
+  type ExportBatch,
+  type ExportPreview,
+  type ReportInvoice,
+} from '../../data/branchInvoices.ts';
+import type { BranchSync } from '../../data/branchSync.ts';
 import { useI18n } from '../../i18n/I18nProvider.tsx';
 import type { Messages } from '../../i18n/messages.ts';
-import { formatMoney, formatTime } from '../../lib/format.ts';
+import { businessDateOf, formatMoney, formatTime } from '../../lib/format.ts';
+import { errorCode } from '../../lib/supabase.ts';
 
-interface ReportViewProps {
-  readonly invoices: readonly Invoice[];
-  readonly businessDate: string;
-  readonly onVoid: (number: string, reason: string) => void;
-  readonly notify: (message: string) => void;
-}
-
-const employeeName = (id: string) => EMPLOYEES.find((employee) => employee.id === id)?.name ?? id;
-
-export function ReportView({ invoices, businessDate, onVoid, notify }: ReportViewProps) {
+export function ReportView({ config, sync }: { readonly config: AppConfig; readonly sync: BranchSync }) {
   const { t, lang } = useI18n();
+  const notify = useNotify();
+  const today = businessDateOf(new Date());
+  const [server, setServer] = useState<ReportInvoice[] | null>(null);
+  const [batches, setBatches] = useState<ExportBatch[]>([]);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [scope, setScope] = useState('');
-  const today = useMemo(
-    () => invoices.filter((invoice) => invoice.businessDate === businessDate),
-    [invoices, businessDate],
+  const [closing, setClosing] = useState<ExportPreview | null>(null);
+  const [again, setAgain] = useState<ExportBatch | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const refresh = useCallback(async () => {
+    try {
+      const [invoices, history] = await Promise.all([fetchOpenInvoices(config, today), listExportBatches()]);
+      setServer(invoices);
+      setBatches(history);
+      setLoadFailed(false);
+    } catch {
+      setLoadFailed(true);
+    }
+  }, [config, today]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh, sync.pending.length]);
+
+  const all = useMemo(
+    () => mergeWithPending(server ?? [], sync.pending, config.branch?.code ?? ''),
+    [server, sync.pending, config.branch],
   );
-  const visible = useMemo(
-    () => (scope ? today.filter((invoice) => invoice.salesPersonId === scope) : today),
-    [today, scope],
-  );
+  const visible = useMemo(() => (scope ? all.filter((invoice) => invoice.salesPersonId === scope) : all), [all, scope]);
   const report = useMemo(() => buildSalesReport(visible), [visible]);
   const summary = report.overall;
-  const methodLabel = (code: string) => PAYMENT_METHODS.find((method) => method.code === code)?.label[lang] ?? code;
+  const employeeName = (id: string) => config.employees.find((employee) => employee.id === id)?.name ?? '—';
+  const methodLabel = (code: string) =>
+    config.paymentMethods.find((method) => method.code === code)?.label[lang] ?? code;
+  const people = useMemo(() => [...new Set(all.map((invoice) => invoice.salesPersonId))], [all]);
+  const summaryText = buildSummaryText(
+    t,
+    summary,
+    config.branch?.code ?? '',
+    scope ? employeeName(scope) : t.everyone,
+    today,
+    config,
+    lang,
+  );
 
-  const summaryText = buildSummaryText(t, summary, scope ? employeeName(scope) : t.everyone, businessDate, methodLabel);
+  const startClose = async () => {
+    try {
+      setClosing(await previewExport());
+    } catch (error) {
+      notify(errorCode(error) === 'OFFLINE' ? t.pinOffline : t.genericError, 'error');
+    }
+  };
+
+  const close = async () => {
+    setBusy(true);
+    try {
+      const result = await exportNewBatch(config);
+      notify(result ? t.exportDone(result.invoiceCount) : t.exportNothing, result ? 'success' : 'info');
+      setClosing(null);
+      await refresh();
+    } catch {
+      notify(t.genericError, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const downloadAgain = async (batch: ExportBatch) => {
+    setBusy(true);
+    try {
+      await downloadBatchAgain(config, batch);
+      setAgain(null);
+      await refresh();
+    } catch {
+      notify(t.genericError, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const copySummary = () => {
     navigator.clipboard
       .writeText(summaryText)
-      .then(() => notify(t.copied))
-      .catch(() => notify(t.copyFailed));
+      .then(() => notify(t.copied, 'success'))
+      .catch(() => notify(t.copyFailed, 'error'));
   };
 
   return (
-    <div className="gutter mx-auto flex max-w-3xl flex-col gap-5 pt-4 pb-10">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="flex min-w-0 flex-col gap-1.5">
-          <label htmlFor="report-scope" className="text-sm font-medium text-muted">
-            {t.reportScope}
-          </label>
-          <select
-            id="report-scope"
-            dir="ltr"
-            value={scope}
-            onChange={(event) => setScope(event.target.value)}
-            className="h-12 rounded-2xl border-2 border-line bg-surface px-3"
+    <div className="gutter mx-auto flex max-w-3xl flex-col gap-5 pt-5 pb-10">
+      {loadFailed ? <p className="rounded-2xl bg-promo-bg p-3 text-sm text-promo">{t.reportOffline}</p> : null}
+
+      <section className="hero animate-rise rounded-3xl p-5 shadow-card">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-sm text-white/80">
+              {t.sales} · {t.openPeriod}
+            </div>
+            <div className="font-display text-4xl font-semibold">
+              <AnimatedMoney amount={summary.total} />{' '}
+              <span className="text-lg font-medium text-white/80">{t.currency}</span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => void refresh()}
+            aria-label={t.refresh}
+            className="press rounded-full bg-white/18 p-2"
           >
-            <option value="">{t.everyone}</option>
-            {EMPLOYEES.map((employee) => (
-              <option key={employee.id} value={employee.id}>
-                {employee.name}
-              </option>
-            ))}
-          </select>
+            <Icon name="cloud" />
+          </button>
         </div>
+        <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
+          {['', ...people].map((id) => (
+            <button
+              key={id || 'all'}
+              type="button"
+              onClick={() => setScope(id)}
+              dir={id ? 'ltr' : undefined}
+              className={`press shrink-0 rounded-full px-3.5 py-1.5 text-sm font-semibold ${
+                scope === id ? 'bg-white text-primary' : 'bg-white/15 text-white'
+              }`}
+            >
+              {id ? employeeName(id).replace(/^\d+-/, '') : t.everyone}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <div className="grid grid-cols-2 gap-3">
+        <StatTile tone="blue" icon="receipt" label={t.invoicesLabel}>
+          {summary.invoiceCount}
+        </StatTile>
+        <StatTile tone="green" icon="tag" label={t.piecesLabel}>
+          {summary.unitCount}
+        </StatTile>
+        <StatTile tone="amber" icon="chart" label={t.averageInvoice}>
+          <Price amount={summary.averageInvoice} />
+        </StatTile>
+        <StatTile tone="purple" icon="close" label={t.voided}>
+          {t.voidedSummary(summary.voided.count, `${formatMoney(summary.voided.total)} ${t.currency}`)}
+        </StatTile>
+      </div>
+
+      <section className="animate-rise rounded-3xl bg-surface p-5 shadow-card">
+        <h2 className="mb-3 font-display text-lg font-semibold">{t.byPaymentMethod}</h2>
+        {Object.keys(summary.byPaymentMethod).length === 0 ? (
+          <p className="text-sm text-muted">{t.noInvoices}</p>
+        ) : (
+          <ul className="flex flex-col gap-2.5">
+            {Object.entries(summary.byPaymentMethod)
+              .sort((a, b) => b[1] - a[1])
+              .map(([code, amount]) => (
+                <li key={code} className="flex items-center justify-between gap-3">
+                  <span className="flex items-center gap-2">
+                    <span className="h-2.5 w-2.5 rounded-full bg-primary" aria-hidden="true" />
+                    {methodLabel(code)}
+                  </span>
+                  <Price amount={amount} className="font-semibold" />
+                </li>
+              ))}
+          </ul>
+        )}
         <button
           type="button"
           onClick={copySummary}
-          className="h-12 rounded-2xl bg-accent px-4 font-semibold text-accent-fg"
+          className="press mt-4 flex items-center gap-2 text-sm font-semibold text-primary"
         >
+          <Icon name="receipt" className="h-4 w-4" />
           {t.copySummary}
         </button>
-      </div>
-
-      <section className="rounded-3xl bg-surface p-5">
-        <div className="text-sm text-muted">{t.sales}</div>
-        <div className="tabular text-4xl font-bold">
-          {formatMoney(summary.total)} <span className="text-lg font-medium text-muted">{t.currency}</span>
-        </div>
-        <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
-          <Stat label={t.invoicesLabel} value={String(summary.invoiceCount)} />
-          <Stat label={t.piecesLabel} value={String(summary.unitCount)} />
-          <Stat label={t.averageInvoice} value={formatMoney(summary.averageInvoice)} />
-          <Stat label={t.piecesPerInvoice} value={summary.unitsPerInvoice.toFixed(2)} />
-        </dl>
       </section>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <section className="rounded-3xl bg-surface p-5">
-          <h2 className="mb-2 font-semibold">{t.byPaymentMethod}</h2>
-          <ul className="flex flex-col gap-1.5">
-            {PAYMENT_METHODS.filter((method) => (summary.byPaymentMethod[method.code] ?? 0) > 0).map((method) => (
-              <li key={method.code} className="flex justify-between">
-                <span>{method.label[lang]}</span>
-                <Price amount={summary.byPaymentMethod[method.code] ?? 0} className="font-semibold" />
-              </li>
-            ))}
-            {Object.keys(summary.byPaymentMethod).length === 0 ? (
-              <li className="text-sm text-muted">{t.noInvoices}</li>
-            ) : null}
-            <li className="mt-1 flex justify-between border-t border-line pt-2 text-danger">
-              <span>{t.voided}</span>
-              <span className="tabular">
-                {t.voidedSummary(summary.voided.count, `${formatMoney(summary.voided.total)} ${t.currency}`)}
-              </span>
-            </li>
-          </ul>
-        </section>
-
-        {!scope ? (
-          <section className="rounded-3xl bg-surface p-5">
-            <h2 className="mb-2 font-semibold">{t.bySalesPerson}</h2>
-            {Object.keys(report.bySalesPerson).length === 0 ? (
-              <p className="text-sm text-muted">{t.noInvoices}</p>
-            ) : (
-              <ul className="flex flex-col gap-1.5">
-                {Object.entries(report.bySalesPerson).map(([id, person]) => (
-                  <li key={id} className="flex justify-between gap-2">
-                    <span className="truncate">{employeeName(id)}</span>
-                    <span className="flex items-baseline gap-2">
-                      <span className="text-xs text-muted">{t.invoices(person.invoiceCount)}</span>
-                      <Price amount={person.total} className="font-semibold" />
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
+      <section className="animate-rise flex flex-col gap-3 rounded-3xl bg-surface p-5 shadow-card">
+        <div className="flex items-center gap-3">
+          <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-tile-blue text-tile-blue-fg">
+            <Icon name="download" />
+          </span>
+          <div>
+            <h2 className="font-display text-lg font-semibold">{t.exportTitle}</h2>
+            <p className="text-sm text-muted">{t.closeHint}</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => void startClose()}
+          className="press flex h-14 items-center justify-center gap-2 rounded-2xl bg-primary font-semibold text-primary-fg shadow-card"
+        >
+          <Icon name="download" />
+          {t.exportTitle}
+        </button>
+        {batches.length > 0 ? (
+          <div className="mt-2 flex flex-col gap-2">
+            <h3 className="text-sm font-semibold text-muted">{t.previousExports}</h3>
+            <ul className="flex flex-col gap-2">
+              {batches.map((batch) => (
+                <li key={batch.id} className="flex items-center gap-3 rounded-2xl bg-surface-2 p-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-semibold">
+                      <bdi className="tabular">
+                        {new Date(batch.createdAt).toLocaleString(lang === 'ar' ? 'ar-EG-u-nu-latn' : 'en-GB', {
+                          day: '2-digit',
+                          month: 'short',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </bdi>{' '}
+                      · {t.invoices(batch.invoiceCount)}
+                    </div>
+                    <div className="text-xs text-muted">
+                      <Price amount={batch.total} /> · {t.downloadedTimes(batch.downloadCount)}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setAgain(batch)}
+                    className="press shrink-0 rounded-xl bg-surface px-3 py-2 text-sm font-semibold text-primary shadow-sm"
+                  >
+                    {t.downloadAgain}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
         ) : null}
-      </div>
+      </section>
 
-      <section className="flex flex-col gap-2">
-        <h2 className="font-semibold">{t.invoiceList}</h2>
+      <section className="flex flex-col gap-3">
+        <h2 className="font-display text-lg font-semibold">{t.invoiceList}</h2>
         {visible.length === 0 ? (
-          <p className="rounded-2xl bg-surface p-4 text-sm text-muted">{t.noInvoices}</p>
+          <p className="rounded-2xl bg-surface p-4 text-sm text-muted shadow-card">{t.noInvoices}</p>
         ) : (
-          <ul className="flex flex-col gap-2">
+          <ul className="flex flex-col gap-2.5">
             {visible.map((invoice) => (
-              <InvoiceRow key={invoice.number} invoice={invoice} businessDate={businessDate} onVoid={onVoid} />
+              <InvoiceRow
+                key={invoice.number}
+                invoice={invoice}
+                employeeName={employeeName(invoice.salesPersonId)}
+                methodLabel={methodLabel}
+                onVoided={() => void refresh()}
+              />
             ))}
           </ul>
         )}
       </section>
 
-      <details className="text-sm text-muted">
-        <summary className="cursor-pointer">{t.copySummary}</summary>
-        <pre className="mt-2 overflow-x-auto rounded-2xl bg-surface p-3 font-mono text-xs whitespace-pre-wrap select-all">
-          {summaryText}
-        </pre>
-      </details>
+      {closing ? (
+        <Sheet title={t.exportTitle} closeLabel={t.cancel} onClose={() => setClosing(null)}>
+          <div className="flex flex-col gap-4 pb-2">
+            <div className="grid grid-cols-2 gap-3">
+              <StatTile tone="blue" icon="receipt" label={t.invoicesLabel}>
+                {closing.invoices}
+              </StatTile>
+              <StatTile tone="green" icon="chart" label={t.sales}>
+                <Price amount={closing.total} />
+              </StatTile>
+            </div>
+            {closing.pendingOnPhones > 0 ? (
+              <p className="rounded-2xl bg-promo-bg p-3 text-sm text-promo">
+                {t.exportPendingWarning(closing.pendingOnPhones)}
+              </p>
+            ) : null}
+            {closing.invoices === 0 ? (
+              <p className="text-muted">{t.exportNothing}</p>
+            ) : (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void close()}
+                className="press flex h-14 items-center justify-center gap-2 rounded-2xl bg-primary text-lg font-semibold text-primary-fg disabled:opacity-50"
+              >
+                <Icon name="download" />
+                {t.exportButton(closing.invoices)}
+              </button>
+            )}
+          </div>
+        </Sheet>
+      ) : null}
+
+      {again ? (
+        <Sheet title={t.downloadAgain} closeLabel={t.cancel} onClose={() => setAgain(null)}>
+          <div className="flex flex-col gap-4 pb-2">
+            <p className="rounded-2xl bg-promo-bg p-3 text-sm text-promo">{t.exportAgainWarning}</p>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void downloadAgain(again)}
+              className="press h-14 rounded-2xl bg-primary text-lg font-semibold text-primary-fg disabled:opacity-50"
+            >
+              {t.downloadAgain}
+            </button>
+          </div>
+        </Sheet>
+      ) : null}
     </div>
   );
-}
-
-function Stat({ label, value }: { readonly label: string; readonly value: string }) {
-  return (
-    <div>
-      <dt className="text-xs text-muted">{label}</dt>
-      <dd className="tabular text-xl font-semibold">{value}</dd>
-    </div>
-  );
-}
-
-function buildSummaryText(
-  t: Messages,
-  summary: SalesSummary,
-  scopeLabel: string,
-  date: string,
-  methodLabel: (code: string) => string,
-): string {
-  const money = (amount: number) => `${formatMoney(amount)} ${t.currency}`;
-  return [
-    t.summaryTitle(BRANCH.code, date),
-    scopeLabel,
-    `${t.sales}: ${money(summary.total)}`,
-    `${t.invoicesLabel}: ${summary.invoiceCount} · ${t.piecesLabel}: ${summary.unitCount}`,
-    `${t.averageInvoice}: ${money(summary.averageInvoice)}`,
-    ...PAYMENT_METHODS.filter((method) => (summary.byPaymentMethod[method.code] ?? 0) > 0).map(
-      (method) => `${methodLabel(method.code)}: ${money(summary.byPaymentMethod[method.code] ?? 0)}`,
-    ),
-    `${t.voided}: ${t.voidedSummary(summary.voided.count, money(summary.voided.total))}`,
-  ].join('\n');
 }
 
 function InvoiceRow({
   invoice,
-  businessDate: date,
-  onVoid: voidIt,
+  employeeName,
+  methodLabel,
+  onVoided,
 }: {
-  readonly invoice: Invoice;
-  readonly businessDate: string;
-  readonly onVoid: (number: string, reason: string) => void;
+  readonly invoice: ReportInvoice;
+  readonly employeeName: string;
+  readonly methodLabel: (code: string) => string;
+  readonly onVoided: () => void;
 }) {
   const { t, lang } = useI18n();
-  const methodLabel = (code: string) => PAYMENT_METHODS.find((method) => method.code === code)?.label[lang] ?? code;
+  const notify = useNotify();
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const voided = invoice.status === 'voided';
-  const structuralBlocker = voidBlocker(invoice, date, 'reason');
+
+  const badge = voided
+    ? { text: t.voidedBadge, className: 'bg-danger-bg text-danger' }
+    : !invoice.synced
+      ? invoice.syncError
+        ? { text: t.syncErrorBadge, className: 'bg-danger-bg text-danger' }
+        : { text: t.waitingBadge, className: 'bg-promo-bg text-promo' }
+      : null;
+
+  const submitVoid = async () => {
+    if (!invoice.synced) return notify(t.voidErrors.WAITING ?? t.genericError, 'error');
+    setBusy(true);
+    try {
+      await voidInvoiceOnServer(invoice.number, reason);
+      notify(t.voidedToast(invoice.number), 'success');
+      onVoided();
+    } catch (error) {
+      const code = errorCode(error);
+      notify(t.voidErrors[code] ?? t.voidErrors.UNKNOWN ?? t.genericError, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
-    <li className={`rounded-2xl bg-surface ${voided ? 'opacity-70' : ''}`}>
+    <li className={`animate-rise rounded-2xl bg-surface shadow-card ${voided ? 'opacity-70' : ''}`}>
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
-        className="flex w-full items-center gap-3 p-3 text-start"
+        className="flex w-full items-center gap-3 p-3.5 text-start"
       >
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-tile-blue text-tile-blue-fg">
+          <Icon name="receipt" className="h-5 w-5" />
+        </span>
         <div className="min-w-0 flex-1">
           <Code className={`font-semibold ${voided ? 'line-through' : ''}`}>{invoice.number}</Code>
           <div className="truncate text-xs text-muted">
-            <bdi className="tabular">{formatTime(invoice.createdAt, lang)}</bdi> · {employeeName(invoice.salesPersonId)}{' '}
-            · {t.pieces(invoice.totals.unitCount)}
+            <bdi className="tabular">{formatTime(invoice.createdAt, lang)}</bdi> · <bdi dir="ltr">{employeeName}</bdi> ·{' '}
+            {t.pieces(invoice.totals.unitCount)}
           </div>
         </div>
-        {voided ? (
-          <span className="rounded-full bg-danger-bg px-2 py-0.5 text-xs font-semibold text-danger">
-            {t.voidedBadge}
-          </span>
-        ) : null}
-        <Price amount={invoice.totals.total} className="font-semibold" />
+        <div className="flex flex-col items-end gap-1">
+          <Price amount={invoice.totals.total} className="font-display font-semibold" />
+          {badge ? (
+            <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${badge.className}`}>
+              {badge.text}
+            </span>
+          ) : null}
+        </div>
       </button>
       {open ? (
-        <div className="flex flex-col gap-3 border-t border-line p-3">
+        <div className="flex flex-col gap-3 border-t border-line p-3.5">
           {invoice.customer.mobile || invoice.customer.name ? (
             <div className="text-sm">
-              {invoice.customer.name}
+              {invoice.customer.name}{' '}
               {invoice.customer.mobile ? (
-                <>
-                  {' · '}
-                  <bdi dir="ltr" className="tabular">
-                    {invoice.customer.mobile}
-                  </bdi>
-                </>
+                <bdi dir="ltr" className="tabular text-muted">
+                  {invoice.customer.mobile}
+                </bdi>
               ) : null}
             </div>
           ) : null}
           <ul className="flex flex-col gap-1 text-sm">
             {invoice.lines.map((line) => (
               <li key={line.seq} className="flex justify-between gap-2">
-                <span className="truncate">
-                  <Code>{`${line.itemCode} · ${line.size}`}</Code> {CATALOG_BY_CODE.get(line.itemCode)?.name}
+                <Code>{line.barcode}</Code>
+                <span className="flex items-center gap-2">
+                  <span className="text-xs text-muted">{line.discountPercent}%</span>
+                  <Price amount={line.finalPrice} />
                 </span>
-                <Price amount={line.finalPrice} />
               </li>
             ))}
           </ul>
@@ -253,20 +424,12 @@ function InvoiceRow({
             <p className="text-sm text-danger">
               {t.voidReason}: {invoice.void?.reason}
             </p>
-          ) : structuralBlocker ? (
-            <p className="text-sm text-muted">{t.voidBlocked[structuralBlocker]}</p>
           ) : (
             <form
               className="flex flex-col gap-2 sm:flex-row"
               onSubmit={(event) => {
                 event.preventDefault();
-                try {
-                  voidIt(invoice.number, reason);
-                  setError(null);
-                } catch (caught) {
-                  const blocker = caught instanceof DomainError ? voidBlocker(invoice, date, reason) : null;
-                  setError(blocker ? t.voidBlocked[blocker] : String(caught));
-                }
+                void submitVoid();
               }}
             >
               <label htmlFor={`void-${invoice.number}`} className="sr-only">
@@ -277,20 +440,41 @@ function InvoiceRow({
                 value={reason}
                 onChange={(event) => setReason(event.target.value)}
                 placeholder={t.voidReasonPlaceholder}
-                className="h-12 min-w-0 flex-1 rounded-xl border-2 border-line bg-bg px-3"
+                className="h-12 min-w-0 flex-1 rounded-xl border border-line bg-surface-2 px-3"
               />
               <button
                 type="submit"
-                disabled={reason.trim() === ''}
-                className="h-12 rounded-xl bg-danger px-4 font-semibold text-surface disabled:opacity-40"
+                disabled={reason.trim() === '' || busy}
+                className="press h-12 rounded-xl bg-danger px-4 font-semibold text-white disabled:opacity-40"
               >
                 {t.confirmVoid}
               </button>
-              {error ? <p className="text-sm text-danger">{error}</p> : null}
             </form>
           )}
         </div>
       ) : null}
     </li>
   );
+}
+
+function buildSummaryText(
+  t: Messages,
+  summary: SalesSummary,
+  branch: string,
+  scopeLabel: string,
+  date: string,
+  config: AppConfig,
+  lang: 'ar' | 'en',
+): string {
+  const money = (amount: number) => `${formatMoney(amount)} ${t.currency}`;
+  const label = (code: string) => config.paymentMethods.find((method) => method.code === code)?.label[lang] ?? code;
+  return [
+    t.summaryTitle(branch, date),
+    scopeLabel,
+    `${t.sales}: ${money(summary.total)}`,
+    `${t.invoicesLabel}: ${summary.invoiceCount} · ${t.piecesLabel}: ${summary.unitCount}`,
+    `${t.averageInvoice}: ${money(summary.averageInvoice)}`,
+    ...Object.entries(summary.byPaymentMethod).map(([code, amount]) => `${label(code)}: ${money(amount)}`),
+    `${t.voided}: ${t.voidedSummary(summary.voided.count, money(summary.voided.total))}`,
+  ].join('\n');
 }

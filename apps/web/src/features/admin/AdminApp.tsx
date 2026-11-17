@@ -1,0 +1,517 @@
+import {
+  findItemListColumns,
+  normalizeDigits,
+  prepareCatalogImport,
+  readItemListRows,
+  type CatalogImport,
+} from '@ravin-sales/domain';
+import { readSheet } from 'read-excel-file/browser';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { Icon, type IconName } from '../../components/Icon.tsx';
+import { Price } from '../../components/Price.tsx';
+import { AnimatedMoney, StatTile } from '../../components/Tiles.tsx';
+import { useNotify } from '../../components/Toast.tsx';
+import {
+  fetchBranchesToday,
+  listAccounts,
+  loadSettings,
+  saveDefaultDiscount,
+  saveOffer,
+  setAccountPin,
+  setItemsDiscountable,
+  uploadProducts,
+  type AccountRow,
+  type BranchToday,
+  type OfferRow,
+} from '../../data/admin.ts';
+import type { LoadedData } from '../../data/appData.ts';
+import { useI18n } from '../../i18n/I18nProvider.tsx';
+import { formatTime } from '../../lib/format.ts';
+import { BranchHeader } from '../branch/BranchApp.tsx';
+
+type Tab = 'dashboard' | 'items' | 'settings' | 'pins';
+const TABS: readonly { readonly tab: Tab; readonly icon: IconName }[] = [
+  { tab: 'dashboard', icon: 'chart' },
+  { tab: 'items', icon: 'tag' },
+  { tab: 'settings', icon: 'settings' },
+  { tab: 'pins', icon: 'key' },
+];
+
+export function AdminApp({ data }: { readonly data: LoadedData }) {
+  const { t } = useI18n();
+  const [tab, setTab] = useState<Tab>('dashboard');
+  const label: Record<Tab, string> = {
+    dashboard: t.tabDashboard,
+    items: t.tabItems,
+    settings: t.tabSettings,
+    pins: t.tabPins,
+  };
+
+  return (
+    <div className="flex min-h-full flex-col">
+      <BranchHeader title={t.adminTitle} subtitle={data.config.account.label} offline={data.offline}>
+        <nav className="flex gap-2 overflow-x-auto pb-1">
+          {TABS.map(({ tab: option, icon }) => (
+            <button
+              key={option}
+              type="button"
+              onClick={() => setTab(option)}
+              aria-current={tab === option ? 'page' : undefined}
+              className={`press flex shrink-0 items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold ${
+                tab === option ? 'bg-white text-primary shadow-card' : 'bg-white/15 text-white'
+              }`}
+            >
+              <Icon name={icon} className="h-4 w-4" />
+              {label[option]}
+            </button>
+          ))}
+        </nav>
+      </BranchHeader>
+      <main className="gutter mx-auto flex w-full max-w-4xl flex-1 flex-col gap-5 pt-5 pb-10">
+        {tab === 'dashboard' ? (
+          <Dashboard />
+        ) : tab === 'items' ? (
+          <Items />
+        ) : tab === 'settings' ? (
+          <Settings />
+        ) : (
+          <Pins />
+        )}
+      </main>
+    </div>
+  );
+}
+
+function Card({
+  title,
+  icon,
+  children,
+}: {
+  readonly title: string;
+  readonly icon: IconName;
+  readonly children: ReactNode;
+}) {
+  return (
+    <section className="animate-rise flex flex-col gap-4 rounded-3xl bg-surface p-5 shadow-card">
+      <h2 className="flex items-center gap-3 font-display text-lg font-semibold">
+        <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-tile-blue text-tile-blue-fg">
+          <Icon name={icon} />
+        </span>
+        {title}
+      </h2>
+      {children}
+    </section>
+  );
+}
+
+function Dashboard() {
+  const { t, lang } = useI18n();
+  const [rows, setRows] = useState<BranchToday[] | null>(null);
+  const load = useCallback(() => {
+    fetchBranchesToday()
+      .then(setRows)
+      .catch(() => setRows([]));
+  }, []);
+  useEffect(() => {
+    load();
+    const timer = window.setInterval(load, 60_000);
+    return () => window.clearInterval(timer);
+  }, [load]);
+
+  const total = (rows ?? []).reduce((sum, row) => sum + row.total, 0);
+  const invoices = (rows ?? []).reduce((sum, row) => sum + row.invoices, 0);
+  const pieces = (rows ?? []).reduce((sum, row) => sum + row.pieces, 0);
+  const waiting = (rows ?? []).reduce((sum, row) => sum + row.phonesPending, 0);
+  const active = (rows ?? []).filter((row) => row.invoices > 0 || row.voided > 0);
+
+  return (
+    <>
+      <section className="hero animate-rise rounded-3xl p-5 shadow-card">
+        <div className="text-sm text-white/80">
+          {t.sales} · {t.allBranches}
+        </div>
+        <div className="font-display text-4xl font-semibold">
+          <AnimatedMoney amount={total} /> <span className="text-lg text-white/80">{t.currency}</span>
+        </div>
+      </section>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatTile tone="blue" icon="receipt" label={t.invoicesLabel}>
+          {invoices}
+        </StatTile>
+        <StatTile tone="green" icon="tag" label={t.piecesLabel}>
+          {pieces}
+        </StatTile>
+        <StatTile tone="amber" icon="chart" label={t.averageInvoice}>
+          <Price amount={invoices ? Math.round(total / invoices) : 0} />
+        </StatTile>
+        <StatTile tone="purple" icon="cloud" label={t.phonesWaiting}>
+          {waiting}
+        </StatTile>
+      </div>
+      <Card title={t.allBranches} icon="chart">
+        {rows === null ? (
+          <p className="text-muted">{t.loadingSettings}</p>
+        ) : active.length === 0 ? (
+          <p className="text-muted">{t.noSalesYet}</p>
+        ) : (
+          <ul className="flex flex-col gap-2.5">
+            {active.map((row) => (
+              <li key={row.branchId} className="flex items-center gap-3 rounded-2xl bg-surface-2 p-3">
+                <span className="flex h-11 w-14 items-center justify-center rounded-xl bg-primary font-mono text-sm font-semibold text-primary-fg">
+                  {row.code}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-semibold" dir="ltr">
+                    {row.posName}
+                  </div>
+                  <div className="text-xs text-muted">
+                    {t.invoices(row.invoices)} · {t.pieces(row.pieces)}
+                    {row.notExported > 0 ? ` · ${t.notExported}: ${row.notExported}` : ''}
+                    {row.phonesPending > 0 ? ` · ${t.phonesWaiting}: ${row.phonesPending}` : ''}
+                    {row.lastSync ? ` · ${t.lastSync} ${formatTime(row.lastSync, lang)}` : ''}
+                  </div>
+                </div>
+                <Price amount={row.total} className="font-display font-semibold" />
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+    </>
+  );
+}
+
+function Items() {
+  const { t } = useI18n();
+  const notify = useNotify();
+  const [prepared, setPrepared] = useState<CatalogImport | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [codes, setCodes] = useState('');
+  const n = (value: number) => value.toLocaleString('en-US');
+
+  const read = async (file: File) => {
+    setPrepared(null);
+    setStatus(t.reading);
+    try {
+      const rows = await readSheet(file);
+      const columns = findItemListColumns(rows[0] ?? []);
+      if ('missing' in columns) {
+        setStatus(t.missingColumns(columns.missing.join(', ')));
+        return;
+      }
+      setPrepared(prepareCatalogImport(readItemListRows(rows, columns)));
+      setStatus(null);
+    } catch {
+      setStatus(t.genericError);
+    }
+  };
+
+  const upload = async () => {
+    if (!prepared) return;
+    setBusy(true);
+    try {
+      const all = prepared.products.length;
+      const result = await uploadProducts(prepared.products, (done) => setStatus(t.uploading(n(done), n(all))));
+      setStatus(t.uploadDone(n(result.inserted), n(result.updated), n(result.unchanged)));
+      notify(t.saved, 'success');
+      setPrepared(null);
+    } catch {
+      setStatus(t.genericError);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const applyDiscountFlag = async (discountable: boolean) => {
+    const list = [
+      ...new Set(
+        normalizeDigits(codes)
+          .split(/[\s,;]+/)
+          .map((code) => code.trim())
+          .filter(Boolean),
+      ),
+    ];
+    if (list.length === 0) return;
+    setBusy(true);
+    try {
+      notify(t.codesUpdated(await setItemsDiscountable(list, discountable)), 'success');
+    } catch {
+      notify(t.genericError, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <Card title={t.itemsTitle} icon="upload">
+        <p className="text-sm text-muted">{t.itemsHint}</p>
+        <label className="press flex h-14 cursor-pointer items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-primary/40 bg-primary-soft font-semibold text-primary">
+          <Icon name="upload" />
+          {t.chooseFile}
+          <input
+            type="file"
+            accept=".xlsx"
+            className="sr-only"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) void read(file);
+              event.target.value = '';
+            }}
+          />
+        </label>
+        {prepared ? (
+          <div className="grid grid-cols-2 gap-3">
+            <StatTile tone="green" icon="check" label={t.previewSellable(n(prepared.products.length))}>
+              {n(prepared.products.length)}
+            </StatTile>
+            <StatTile tone="amber" icon="tag" label={t.previewNoPrice(n(prepared.skipped.noPrice.length))}>
+              {n(prepared.skipped.noPrice.length)}
+            </StatTile>
+            <StatTile
+              tone="purple"
+              icon="close"
+              label={t.previewDuplicates(n(prepared.skipped.duplicateBarcode.length))}
+            >
+              {n(prepared.skipped.duplicateBarcode.length)}
+            </StatTile>
+            <StatTile tone="blue" icon="receipt" label={t.previewInvalid(n(prepared.skipped.invalid.length))}>
+              {n(prepared.skipped.invalid.length)}
+            </StatTile>
+          </div>
+        ) : null}
+        {status ? (
+          <p className="rounded-2xl bg-surface-2 p-3 text-sm" role="status">
+            {status}
+          </p>
+        ) : null}
+        {prepared ? (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void upload()}
+            className="press h-14 rounded-2xl bg-primary font-semibold text-primary-fg disabled:opacity-50"
+          >
+            {t.upload}
+          </button>
+        ) : null}
+      </Card>
+
+      <Card title={t.noDiscountTitle} icon="tag">
+        <p className="text-sm text-muted">{t.noDiscountHint}</p>
+        <textarea
+          value={codes}
+          onChange={(event) => setCodes(event.target.value)}
+          rows={4}
+          dir="ltr"
+          placeholder={'R219822\nO178475'}
+          className="rounded-2xl border border-line bg-surface-2 p-3 font-mono"
+        />
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void applyDiscountFlag(false)}
+            className="press h-12 rounded-2xl bg-primary font-semibold text-primary-fg disabled:opacity-50"
+          >
+            {t.noDiscountApply}
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void applyDiscountFlag(true)}
+            className="press h-12 rounded-2xl bg-surface-2 font-semibold disabled:opacity-50"
+          >
+            {t.noDiscountRestore}
+          </button>
+        </div>
+      </Card>
+    </>
+  );
+}
+
+function Settings() {
+  const { t } = useI18n();
+  const notify = useNotify();
+  const [discount, setDiscount] = useState('');
+  const [offers, setOffers] = useState<OfferRow[]>([]);
+
+  useEffect(() => {
+    loadSettings()
+      .then((settings) => {
+        setDiscount(String(settings.defaultDiscountPercent));
+        setOffers(settings.offers);
+      })
+      .catch(() => notify(t.genericError, 'error'));
+  }, [notify, t]);
+
+  const save = async () => {
+    const percent = Number(normalizeDigits(discount));
+    const offersValid = offers.every((offer) => offer.payQty >= 1 && offer.buyQty > offer.payQty);
+    if (!Number.isFinite(percent) || percent < 0 || percent > 100 || !offersValid) {
+      notify(t.genericError, 'error');
+      return;
+    }
+    try {
+      await saveDefaultDiscount(percent);
+      await Promise.all(offers.map(saveOffer));
+      notify(t.settingsSaved, 'success');
+    } catch {
+      notify(t.genericError, 'error');
+    }
+  };
+
+  return (
+    <Card title={t.tabSettings} icon="settings">
+      <label className="flex flex-col gap-1.5">
+        <span className="text-sm font-medium text-muted">{t.defaultDiscount}</span>
+        <input
+          value={discount}
+          onChange={(event) => setDiscount(event.target.value)}
+          inputMode="decimal"
+          dir="ltr"
+          className="h-13 rounded-2xl border border-line bg-surface-2 px-4 font-display text-2xl font-semibold"
+        />
+      </label>
+      {offers.map((offer) => (
+        <div key={offer.id} className="flex flex-col gap-3 rounded-2xl bg-surface-2 p-4">
+          <div className="flex items-center justify-between">
+            <span className="font-semibold">
+              {t.offerSettings}: {t.offerName(offer.buyQty, offer.payQty)}
+            </span>
+            <label className="flex items-center gap-2 text-sm font-semibold">
+              <input
+                type="checkbox"
+                checked={offer.isActive}
+                onChange={(event) =>
+                  setOffers((list) =>
+                    list.map((item) => (item.id === offer.id ? { ...item, isActive: event.target.checked } : item)),
+                  )
+                }
+                className="h-5 w-5 accent-[var(--primary)]"
+              />
+              {t.offerActive}
+            </label>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            {(['buyQty', 'payQty'] as const).map((field) => (
+              <label key={field} className="flex flex-col gap-1">
+                <span className="text-xs text-muted">{field === 'buyQty' ? t.buyQty : t.payQty}</span>
+                <input
+                  value={offer[field]}
+                  inputMode="numeric"
+                  dir="ltr"
+                  onChange={(event) =>
+                    setOffers((list) =>
+                      list.map((item) =>
+                        item.id === offer.id
+                          ? { ...item, [field]: Number(normalizeDigits(event.target.value)) || 0 }
+                          : item,
+                      ),
+                    )
+                  }
+                  className="h-12 rounded-xl border border-line bg-surface px-3 font-display text-xl font-semibold"
+                />
+              </label>
+            ))}
+          </div>
+        </div>
+      ))}
+      <button
+        type="button"
+        onClick={() => void save()}
+        className="press h-14 rounded-2xl bg-primary font-semibold text-primary-fg"
+      >
+        {t.save}
+      </button>
+    </Card>
+  );
+}
+
+function Pins() {
+  const { t } = useI18n();
+  const notify = useNotify();
+  const [accounts, setAccounts] = useState<AccountRow[]>([]);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [pin, setPin] = useState('');
+
+  const load = useCallback(() => {
+    listAccounts()
+      .then(setAccounts)
+      .catch(() => notify(t.genericError, 'error'));
+  }, [notify, t]);
+  useEffect(load, [load]);
+
+  const save = async (account: AccountRow) => {
+    const value = normalizeDigits(pin);
+    if (!/^\d{6}$/.test(value)) return notify(t.pinFormat, 'error');
+    try {
+      await setAccountPin(account.id, value);
+      notify(t.pinSet(account.label), 'success');
+      setEditing(null);
+      setPin('');
+      load();
+    } catch {
+      notify(t.genericError, 'error');
+    }
+  };
+
+  return (
+    <Card title={t.tabPins} icon="key">
+      <p className="text-sm text-muted">{t.pinsHint}</p>
+      <ul className="flex flex-col gap-2">
+        {accounts.map((account) => (
+          <li key={account.id} className="flex flex-col gap-2 rounded-2xl bg-surface-2 p-3">
+            <div className="flex items-center gap-3">
+              <span
+                className={`h-2.5 w-2.5 rounded-full ${account.hasPin ? 'bg-free' : 'bg-line'}`}
+                aria-hidden="true"
+              />
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-semibold" dir="ltr">
+                  {account.label}
+                </div>
+                <div className="text-xs text-muted">{account.hasPin ? t.hasPin : t.noPin}</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditing(editing === account.id ? null : account.id);
+                  setPin('');
+                }}
+                className="press rounded-xl bg-surface px-3 py-2 text-sm font-semibold text-primary shadow-sm"
+              >
+                {t.setPin}
+              </button>
+            </div>
+            {editing === account.id ? (
+              <form
+                className="animate-rise flex gap-2"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void save(account);
+                }}
+              >
+                <input
+                  value={pin}
+                  onChange={(event) => setPin(event.target.value)}
+                  inputMode="numeric"
+                  maxLength={6}
+                  autoFocus
+                  dir="ltr"
+                  aria-label={t.newPin}
+                  placeholder="••••••"
+                  className="h-12 min-w-0 flex-1 rounded-xl border border-line bg-surface px-3 text-center font-mono text-xl tracking-[0.4em]"
+                />
+                <button type="submit" className="press h-12 rounded-xl bg-primary px-4 font-semibold text-primary-fg">
+                  {t.save}
+                </button>
+              </form>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}

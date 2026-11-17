@@ -2,7 +2,7 @@ import { sortSizes, type CartUnit } from '@ravin-sales/domain';
 import { useMemo } from 'react';
 import { Code, Price } from '../../components/Price.tsx';
 import { Sheet } from '../../components/Sheet.tsx';
-import type { CatalogItem, CatalogVariant } from '../../config/demo.ts';
+import type { CatalogItem, CatalogVariant } from '../../data/appData.ts';
 import { useI18n } from '../../i18n/I18nProvider.tsx';
 
 interface SizeSheetProps {
@@ -23,41 +23,48 @@ export function SizeSheet({ item, cartUnits, onAdd, onClose }: SizeSheetProps) {
 
   return (
     <Sheet
-      title={item.name}
+      title={<Code>{item.itemCode}</Code>}
       subtitle={
-        <span className="flex flex-wrap items-center gap-x-3">
-          <Code>{item.itemCode}</Code>
-          {first ? (
-            <span className="flex items-center gap-2">
-              <Price amount={first.salePrice} className="font-semibold text-fg" />
-              <s className="text-muted">
+        first ? (
+          <span className="flex flex-wrap items-center gap-2">
+            {item.name ? <span>{item.name}</span> : null}
+            <Price amount={first.salePrice} className="font-semibold text-primary" />
+            {first.listPrice > first.salePrice ? (
+              <s>
                 <Price amount={first.listPrice} />
               </s>
-            </span>
-          ) : null}
-        </span>
+            ) : null}
+          </span>
+        ) : null
       }
       closeLabel={t.done}
       onClose={onClose}
     >
       <p className="mb-3 text-sm text-muted">{t.sizeHint}</p>
-      <div className="grid grid-cols-3 gap-2 pb-1 sm:grid-cols-4">
-        {variants.map((variant) => {
-          const count = cartUnits.filter(
-            (unit) => unit.itemCode === item.itemCode && unit.size === variant.size,
-          ).length;
+      <div className="grid grid-cols-3 gap-2.5 pb-2 sm:grid-cols-4">
+        {variants.map((variant, index) => {
+          const count = cartUnits.filter((unit) => unit.barcode === variant.barcode).length;
           return (
             <button
-              key={variant.size}
+              key={variant.barcode}
               type="button"
               onClick={() => onAdd(variant)}
-              className={`relative flex min-h-16 items-center justify-center rounded-2xl border-2 px-2 text-lg font-semibold transition active:scale-95 ${
-                count > 0 ? 'border-accent bg-accent text-accent-fg' : 'border-line bg-surface-2 text-fg'
+              style={{ animationDelay: `${index * 30}ms` }}
+              className={`press animate-rise relative flex min-h-18 flex-col items-center justify-center gap-0.5 rounded-2xl px-2 font-semibold ${
+                count > 0 ? 'bg-primary text-primary-fg shadow-card' : 'bg-surface-2 text-fg'
               }`}
             >
-              <Code>{variant.size}</Code>
+              <Code className="text-lg">{variant.size}</Code>
+              {variant.salePrice !== first?.salePrice ? (
+                <span className="text-xs opacity-80">
+                  <Price amount={variant.salePrice} />
+                </span>
+              ) : null}
               {count > 0 ? (
-                <span className="tabular absolute -top-2 end-1 min-w-6 rounded-full bg-free px-1.5 text-center text-xs leading-6 font-bold text-surface">
+                <span
+                  key={count}
+                  className="animate-pop tabular absolute -top-2 end-1 min-w-6 rounded-full bg-free px-1.5 text-center text-xs leading-6 font-bold text-white"
+                >
                   ×{count}
                 </span>
               ) : null}

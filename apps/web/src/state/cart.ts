@@ -10,9 +10,9 @@ import {
   type NewCartUnit,
   type Offer,
   type PricedCart,
+  type PricingSettings,
 } from '@ravin-sales/domain';
 import { useEffect, useMemo, useReducer } from 'react';
-import { PRICING } from '../config/demo.ts';
 import { readJson, writeJson } from '../lib/storage.ts';
 
 export type CartAction =
@@ -38,21 +38,24 @@ function reducer(state: CartState, action: CartAction): CartState {
 }
 
 /** Restores the cart after a reload so a sale in progress is never lost; discards anything invalid. */
-function restore(): CartState {
-  const saved = readJson<CartState | null>('cart', null);
+function restore(key: string, pricing: PricingSettings): CartState {
+  const saved = readJson<CartState | null>(key, null);
   if (!saved || !Array.isArray(saved.units) || typeof saved.nextSeq !== 'number') return createCart();
   try {
     assertValidUnits(saved.units);
-    priceCart(saved.units, PRICING, saved.offer ?? null);
+    priceCart(saved.units, pricing, saved.offer ?? null);
     return { units: saved.units, nextSeq: saved.nextSeq, offer: saved.offer ?? null };
   } catch {
     return createCart();
   }
 }
 
-export function useCart(): { cart: CartState; priced: PricedCart; dispatch: (action: CartAction) => void } {
-  const [cart, dispatch] = useReducer(reducer, undefined, restore);
-  useEffect(() => writeJson('cart', cart), [cart]);
-  const priced = useMemo(() => priceCart(cart.units, PRICING, cart.offer), [cart]);
+export function useCart(
+  storageKey: string,
+  pricing: PricingSettings,
+): { cart: CartState; priced: PricedCart; dispatch: (action: CartAction) => void } {
+  const [cart, dispatch] = useReducer(reducer, undefined, () => restore(storageKey, pricing));
+  useEffect(() => writeJson(storageKey, cart), [storageKey, cart]);
+  const priced = useMemo(() => priceCart(cart.units, pricing, cart.offer), [cart, pricing]);
   return { cart, priced, dispatch };
 }
