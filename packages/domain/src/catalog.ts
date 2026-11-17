@@ -1,3 +1,5 @@
+import { normalizeDigits } from './text.ts';
+
 export interface SearchableItem {
   /** One letter followed by digits, e.g. "A12345". */
   readonly itemCode: string;
@@ -23,7 +25,7 @@ function rankMatch(item: SearchableItem, code: string, nameQuery: string): numbe
  * Order: exact code, code prefix, code contains, name contains.
  */
 export function searchCatalog<T extends SearchableItem>(items: readonly T[], query: string, limit = 20): T[] {
-  const nameQuery = query.trim().toLowerCase();
+  const nameQuery = normalizeDigits(query).trim().toLowerCase();
   const code = nameQuery.toUpperCase().replace(/\s+/g, '');
   if (code === '') return [];
 

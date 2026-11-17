@@ -17,3 +17,17 @@ export {
 } from './pricing.ts';
 export { addUnit, applyOffer, createCart, removeOffer, removeUnit, type CartState, type NewCartUnit } from './cart.ts';
 export { searchCatalog, sortSizes, type SearchableItem } from './catalog.ts';
+export { normalizeDigits } from './text.ts';
+export { normalizeEgyptianMobile } from './customer.ts';
+export { settlePayments, type PaymentKind, type PaymentLine, type PaymentMethod, type PaymentSettlement } from './payments.ts';
+export {
+  formatInvoiceNumber,
+  parseInvoiceNumber,
+  voidBlocker,
+  voidInvoice,
+  type Invoice,
+  type InvoiceNumberParts,
+  type InvoiceStatus,
+  type VoidBlocker,
+} from './invoice.ts';
+export { buildSalesReport, type SalesReport, type SalesSummary } from './reports.ts';

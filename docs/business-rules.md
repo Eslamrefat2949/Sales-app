@@ -137,15 +137,16 @@ by whoever holds the phone), plus the branch total:
 ## 13. Infrastructure
 
 - A dedicated Supabase project named **RAVIN SALES APP**, separate from the existing projects.
-- **OPEN:** new Pro organization (recommended, about $25/month) or upgrade the existing organization
-  (about $45/month for three projects).
+- **OPEN:** the free plan allows two active projects and both are in use. The owner will free a slot by
+  pausing or deleting an unused project, then the new project is created on the free plan. Before the
+  rollout to all branches, revisit the Pro plan for daily backups.
 
 ## Open items
 
 1. Odoo upload form (ideally with a filled example).
 2. Branch names, codes and mapping.
 3. Payment methods per branch and their Odoo names.
-4. Item master export from Odoo (item code, name, size, barcode if any, list price, sale price).
+4. Item list from Odoo (item code, name, size, barcode if any, list price, sale price). No branch stock.
 5. Employee list (name, branch, name as in Odoo).
 6. Final price rounding (piasters or whole pounds).
-7. Supabase organization decision.
+7. Free a Supabase project slot (pause or delete an unused project).

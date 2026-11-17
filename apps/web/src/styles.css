@@ -1,0 +1,150 @@
+@import "tailwindcss";
+
+/*
+  Layout: one-screen phone app. Sticky header, scrolling work area, fixed action bar at the thumb.
+  Palette: cool retail neutrals with an ink-blue accent; semantic colours mark how each piece is priced
+  (amber = regular discount, blue = paid in offer, green = free).
+*/
+:root {
+  --bg: #f2f4f6;
+  --surface: #ffffff;
+  --surface-2: #e9edf1;
+  --fg: #111a22;
+  --muted: #59656f;
+  --line: #d6dce2;
+  --accent: #1d3b57;
+  --accent-fg: #ffffff;
+  --promo: #8a4f00;
+  --promo-bg: #fcefd9;
+  --paid: #1d4f8a;
+  --paid-bg: #e2ecf8;
+  --free: #136b42;
+  --free-bg: #dff3e7;
+  --danger: #b42318;
+  --danger-bg: #fdeceb;
+  --scrim: rgb(9 14 19 / 0.45);
+
+  --font-ui: "IBM Plex Sans Arabic", "Segoe UI", Tahoma, system-ui, sans-serif;
+  --font-code: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d1318;
+    --surface: #151d24;
+    --surface-2: #1d2731;
+    --fg: #e6ebef;
+    --muted: #95a3af;
+    --line: #2a3742;
+    --accent: #8fbbe3;
+    --accent-fg: #0d1318;
+    --promo: #f1b65c;
+    --promo-bg: #33240d;
+    --paid: #93bdf0;
+    --paid-bg: #14273d;
+    --free: #67d29a;
+    --free-bg: #10301f;
+    --danger: #f3786d;
+    --danger-bg: #3a1614;
+    --scrim: rgb(0 0 0 / 0.6);
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0d1318;
+  --surface: #151d24;
+  --surface-2: #1d2731;
+  --fg: #e6ebef;
+  --muted: #95a3af;
+  --line: #2a3742;
+  --accent: #8fbbe3;
+  --accent-fg: #0d1318;
+  --promo: #f1b65c;
+  --promo-bg: #33240d;
+  --paid: #93bdf0;
+  --paid-bg: #14273d;
+  --free: #67d29a;
+  --free-bg: #10301f;
+  --danger: #f3786d;
+  --danger-bg: #3a1614;
+  --scrim: rgb(0 0 0 / 0.6);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-promo: var(--promo);
+  --color-promo-bg: var(--promo-bg);
+  --color-paid: var(--paid);
+  --color-paid-bg: var(--paid-bg);
+  --color-free: var(--free);
+  --color-free-bg: var(--free-bg);
+  --color-danger: var(--danger);
+  --color-danger-bg: var(--danger-bg);
+  --color-scrim: var(--scrim);
+  --font-sans: var(--font-ui);
+  --font-mono: var(--font-code);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Paints the strip above the sticky header on phones with a notch. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0 0 auto;
+  height: env(safe-area-inset-top, 0px);
+  z-index: 10;
+  background: var(--surface);
+}
+
+@layer utilities {
+  .gutter {
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  .pb-safe {
+    padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
+  }
+  .top-safe {
+    top: env(safe-area-inset-top, 0px);
+  }
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

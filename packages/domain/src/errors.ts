@@ -5,7 +5,9 @@ export type DomainErrorCode =
   | 'INVALID_OFFER'
   | 'OFFER_NOT_APPLICABLE'
   | 'OFFER_INTEGRITY'
-  | 'UNIT_NOT_FOUND';
+  | 'UNIT_NOT_FOUND'
+  | 'INVALID_INVOICE'
+  | 'VOID_NOT_ALLOWED';
 
 /**
  * Error raised when business rules are violated.
