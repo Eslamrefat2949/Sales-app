@@ -135,6 +135,8 @@ Implemented in `packages/domain/src/offer.ts`, `pricing.ts` and `cart.ts`.
 - The branch downloads an Excel file in the POS Import format: `order_ref`, `product_barcode`, `qty`,
   `date`, `partner_name`, `partner_phone`, `price_unit`, `payment_amount`, `payment_method`,
   `salesperson`, plus a discount column (**OPEN:** final column name and format, being prepared).
+- **Sales only, no returns:** voided invoices are left out of the file entirely; there are never refund
+  rows (`qty` -1). Once a file is downloaded its invoices are final; any later return is made in Odoo.
 - One row per piece with `qty` 1. `price_unit` is the price after; the discount column carries the line
   discount (30, 0 for an offer-paid piece, 100 for a free piece).
 - Order fields (`date`, customer, `salesperson`) on the first row of each order; each payment on its own
