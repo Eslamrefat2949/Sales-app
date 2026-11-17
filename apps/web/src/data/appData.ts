@@ -1,6 +1,7 @@
 import type { Money, Offer, PaymentMethod } from '@ravin-sales/domain';
 import { normalizeBarcode } from '@ravin-sales/domain';
 import { idbGet, idbSet } from '../lib/idb.ts';
+import { withTimeout } from '../lib/async.ts';
 import { supabase, unwrap } from '../lib/supabase.ts';
 
 export type Localized = { readonly ar: string; readonly en: string };
@@ -140,7 +141,10 @@ export async function loadAppData(
   let config: AppConfig;
   let offline = false;
   try {
-    config = toConfig(unwrap(await supabase.rpc('app_bootstrap')) as BootstrapRow);
+    // No internet (or no answer within a few seconds): open straight away with the saved copy.
+    if (!navigator.onLine) throw new Error('OFFLINE');
+    const row = unwrap(await withTimeout(Promise.resolve(supabase.rpc('app_bootstrap')), 8000)) as BootstrapRow;
+    config = toConfig(row);
     await idbSet(configKey, config);
   } catch (error) {
     const saved = await idbGet<AppConfig>(configKey);

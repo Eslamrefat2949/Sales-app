@@ -14,3 +14,10 @@ createRoot(container).render(
     </I18nProvider>
   </StrictMode>,
 );
+
+// Keeps the app on the phone so it opens and sells without internet (see build/serviceWorker.ts).
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => undefined);
+  });
+}

@@ -1,9 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
 import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from '../config/supabase.ts';
 
+export const AUTH_STORAGE_KEY = 'ravin-sales:auth';
+
 /** One client for the whole app. The session is kept on the phone so it keeps working offline. */
 export const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
-  auth: { persistSession: true, autoRefreshToken: true, storageKey: 'ravin-sales:auth' },
+  auth: { persistSession: true, autoRefreshToken: true, storageKey: AUTH_STORAGE_KEY },
 });
 
 /** Error codes our database functions raise in the message (e.g. VOID_ALREADY_EXPORTED). */

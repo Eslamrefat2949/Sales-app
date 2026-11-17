@@ -1,4 +1,4 @@
-import type { Session } from '@supabase/supabase-js';
+import { isAuthRetryableFetchError } from '@supabase/supabase-js';
 import { useEffect, useState } from 'react';
 import { ToastProvider } from './components/Toast.tsx';
 import { loadAppData, type LoadedData } from './data/appData.ts';
@@ -8,26 +8,47 @@ import { BranchApp } from './features/branch/BranchApp.tsx';
 import { ChangePinScreen } from './features/login/ChangePinScreen.tsx';
 import { LoginScreen, Wordmark } from './features/login/LoginScreen.tsx';
 import { useI18n } from './i18n/I18nProvider.tsx';
-import { supabase } from './lib/supabase.ts';
+import { withTimeout } from './lib/async.ts';
+import { AUTH_STORAGE_KEY, supabase } from './lib/supabase.ts';
+
+/** The account saved on this phone by the last sign-in, if any. */
+function savedUserId(): string | null {
+  try {
+    const saved = JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY) ?? 'null') as { user?: { id?: string } } | null;
+    return saved?.user?.id ?? null;
+  } catch {
+    return null;
+  }
+}
 
 export function App() {
-  const [session, setSession] = useState<Session | null | undefined>(undefined);
+  // undefined while checking, null when signed out.
+  const [userId, setUserId] = useState<string | null | undefined>(undefined);
 
   useEffect(() => {
-    void supabase.auth.getSession().then(({ data }) => setSession(data.session));
-    const { data } = supabase.auth.onAuthStateChange((_event, next) => setSession(next));
+    const saved = savedUserId();
+    const check = supabase.auth.getSession();
+    // With no internet, renewing a sign-in older than an hour keeps retrying for about 30 seconds.
+    // A sign-in saved on the phone opens the app straight away instead; it renews by itself once the
+    // internet is back, and a sign-in the server no longer accepts sends the phone to the sign-in screen.
+    const quick = saved ? withTimeout(check, navigator.onLine ? 4000 : 300) : check;
+    quick
+      .then(({ data, error }) => {
+        if (data.session) setUserId(data.session.user.id);
+        else if (error && isAuthRetryableFetchError(error)) setUserId(saved);
+        else setUserId(null);
+      })
+      .catch(() => setUserId(saved));
+    const { data } = supabase.auth.onAuthStateChange((event, next) => {
+      if (next) setUserId(next.user.id);
+      else if (event === 'SIGNED_OUT') setUserId(null);
+    });
     return () => data.subscription.unsubscribe();
   }, []);
 
   return (
     <ToastProvider>
-      {session === undefined ? (
-        <Splash />
-      ) : session ? (
-        <SignedIn key={session.user.id} userId={session.user.id} />
-      ) : (
-        <LoginScreen />
-      )}
+      {userId === undefined ? <Splash /> : userId ? <SignedIn key={userId} userId={userId} /> : <LoginScreen />}
     </ToastProvider>
   );
 }

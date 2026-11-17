@@ -157,7 +157,13 @@ export function BranchHeader({
               }`}
             >
               <Icon name={online ? 'cloud' : 'cloudOff'} className="h-4 w-4" />
-              {!online ? t.offline : pending > 0 ? t.syncPending(pending) : t.online}
+              {!online
+                ? pending > 0
+                  ? `${t.offline} · ${t.syncPending(pending)}`
+                  : t.offline
+                : pending > 0
+                  ? t.syncPending(pending)
+                  : t.online}
             </span>
             <button
               type="button"

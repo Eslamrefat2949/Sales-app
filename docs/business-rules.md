@@ -238,6 +238,24 @@ Implemented in `packages/domain/src/offer.ts`, `pricing.ts` and `cart.ts`.
   and its sheets are never imported into Odoo. Put it back on 1234 from the PINs tab before each
   training to show the first sign-in again.
 
+## Offline and several phones (verified 18 Nov 2026)
+
+- **The app lives on the phone.** A service worker keeps the page, code, barcode reader and icons on
+  the phone after the first opening, so the app opens and sells with no internet at all, even after
+  it was closed or the phone restarted. "Add to Home Screen" installs it with its own icon.
+- **Offline:** the items, the branch's sales people, payment methods and a block of 100 invoice
+  numbers are already on the phone. Invoices are saved on the phone and the top bar shows
+  "Offline · N waiting". When the internet is back they go up by themselves (within seconds, and
+  every 20 seconds after that). A sign-in older than an hour is kept while offline and renewed once
+  the internet is back.
+- **What needs internet:** the first sign-in on a phone, changing a PIN, voiding an invoice, the
+  report of the other phones, and closing the day.
+- **Several phones on one branch account** sell at the same time. Each phone has its own number
+  ("phone 1, 2, 3…") and its own block of invoice numbers, so numbers never clash, even when one
+  phone is offline. Every phone sees the whole branch's report.
+- **Before closing the day** every phone should be online for a moment; the close warns when a phone
+  still holds invoices, and those go into the next close.
+
 ## Open items
 
 1. Items without discount: also excluded from the offer? (Today: yes, they sell at the price after.)
