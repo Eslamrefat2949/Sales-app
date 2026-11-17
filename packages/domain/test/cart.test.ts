@@ -11,7 +11,12 @@ const BUY4_PAY2: Offer = { id: 'offer-b4p2', code: 'B4P2', buyQty: 4, payQty: 2 
 function add(cart: CartState, ...salePrices: number[]): CartState {
   return salePrices.reduce(
     (state, price, index) =>
-      addUnit(state, { itemCode: `A${price}${index}`, size: 'M', listPrice: fromPounds(price * 2), salePrice: fromPounds(price) }),
+      addUnit(state, {
+        itemCode: `A${price}${index}`,
+        size: 'M',
+        listPrice: fromPounds(price * 2),
+        salePrice: fromPounds(price),
+      }),
     cart,
   );
 }

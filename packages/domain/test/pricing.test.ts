@@ -108,7 +108,10 @@ describe('pieces added after the offer was applied', () => {
   it('get 30% and do not reshuffle the offer, even if more expensive', () => {
     const before = units(1000, 800, 600, 400, 300);
     const application = createOfferApplication(before, BUY4_PAY2);
-    const after: CartUnit[] = [...before, { seq: 6, itemCode: 'A2000', size: 'L', listPrice: 400000, salePrice: 200000 }];
+    const after: CartUnit[] = [
+      ...before,
+      { seq: 6, itemCode: 'A2000', size: 'L', listPrice: 400000, salePrice: 200000 },
+    ];
     const cart = priceCart(after, SETTINGS, application);
     expect(finalPrices(cart)).toEqual([1000, 800, 0, 0, 210, 1400]);
     expect(total(cart)).toBe(3410);

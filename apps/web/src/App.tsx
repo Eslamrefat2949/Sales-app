@@ -76,7 +76,9 @@ export function App() {
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <span className="text-lg font-bold tracking-tight">{t.appName}</span>
-              <span className="rounded-full bg-promo-bg px-2 py-0.5 text-[11px] font-semibold text-promo">{t.demoData}</span>
+              <span className="rounded-full bg-promo-bg px-2 py-0.5 text-[11px] font-semibold text-promo">
+                {t.demoData}
+              </span>
             </div>
             <div className="truncate text-xs text-muted">
               {BRANCH.name[lang]} · <bdi dir="ltr">{t.branchDevice(BRANCH.code, DEVICE_NO)}</bdi>
@@ -116,7 +118,13 @@ export function App() {
 
       <main className="mx-auto w-full max-w-3xl flex-1">
         {view.name === 'sell' ? (
-          <SellView cart={cart} priced={priced} dispatch={dispatch} onCheckout={() => setView({ name: 'checkout' })} notify={notify} />
+          <SellView
+            cart={cart}
+            priced={priced}
+            dispatch={dispatch}
+            onCheckout={() => setView({ name: 'checkout' })}
+            notify={notify}
+          />
         ) : view.name === 'checkout' ? (
           <CheckoutView
             priced={priced}
@@ -139,8 +147,13 @@ export function App() {
         )}
       </main>
 
-      <div aria-live="polite" className="pointer-events-none fixed inset-x-0 top-[calc(env(safe-area-inset-top,0px)+7rem)] z-50 flex justify-center px-4">
-        {toast ? <div className="rounded-full bg-fg px-4 py-2 text-sm font-medium text-bg shadow-lg">{toast}</div> : null}
+      <div
+        aria-live="polite"
+        className="pointer-events-none fixed inset-x-0 top-[calc(env(safe-area-inset-top,0px)+7rem)] z-50 flex justify-center px-4"
+      >
+        {toast ? (
+          <div className="rounded-full bg-fg px-4 py-2 text-sm font-medium text-bg shadow-lg">{toast}</div>
+        ) : null}
       </div>
     </div>
   );

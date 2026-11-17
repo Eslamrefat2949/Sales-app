@@ -1,4 +1,12 @@
-import { fromPounds, type Money, type Offer, type PaymentMethod, type PricingSettings } from '@ravin-sales/domain';
+import {
+  defaultBarcode,
+  fromPounds,
+  normalizeBarcode,
+  type Money,
+  type Offer,
+  type PaymentMethod,
+  type PricingSettings,
+} from '@ravin-sales/domain';
 
 /**
  * Demo configuration. In production these come from Supabase: the item list uploaded from Odoo,
@@ -7,6 +15,8 @@ import { fromPounds, type Money, type Offer, type PaymentMethod, type PricingSet
 
 export interface CatalogVariant {
   readonly size: string;
+  /** Exact barcode on the tag; defaults to ITEMCODE-SIZE when the item list has none. */
+  readonly barcode: string;
   readonly listPrice: Money;
   readonly salePrice: Money;
 }
@@ -90,7 +100,24 @@ const ROWS: readonly (readonly [string, string, number, number, readonly string[
 export const CATALOG: readonly CatalogItem[] = ROWS.map(([itemCode, name, before, after, sizes]) => ({
   itemCode,
   name,
-  variants: sizes.map((size) => ({ size, listPrice: fromPounds(before), salePrice: fromPounds(after) })),
+  variants: sizes.map((size) => ({
+    size,
+    barcode: defaultBarcode(itemCode, size),
+    listPrice: fromPounds(before),
+    salePrice: fromPounds(after),
+  })),
 }));
 
 export const CATALOG_BY_CODE: ReadonlyMap<string, CatalogItem> = new Map(CATALOG.map((item) => [item.itemCode, item]));
+
+export interface BarcodeMatch {
+  readonly item: CatalogItem;
+  readonly variant: CatalogVariant;
+}
+
+/** Exact barcode lookup, built once. Works offline because the catalog lives on the phone. */
+export const BARCODE_INDEX: ReadonlyMap<string, BarcodeMatch> = new Map(
+  CATALOG.flatMap((item) =>
+    item.variants.map((variant) => [normalizeBarcode(variant.barcode), { item, variant }] as const),
+  ),
+);

@@ -22,7 +22,9 @@ describe('Arabic digits', () => {
   });
 
   it('lets the seller search with an Arabic keypad', () => {
-    expect(searchCatalog([{ itemCode: 'A12345', name: 'Shirt' }], '١٢٣٤٥').map((item) => item.itemCode)).toEqual(['A12345']);
+    expect(searchCatalog([{ itemCode: 'A12345', name: 'Shirt' }], '١٢٣٤٥').map((item) => item.itemCode)).toEqual([
+      'A12345',
+    ]);
   });
 });
 
@@ -101,7 +103,10 @@ describe('settlePayments', () => {
   });
 
   it('refuses methods the branch does not offer', () => {
-    expect(settlePayments(total, [{ methodCode: 'VALU', amount: total }], METHODS)).toMatchObject({ ok: false, reason: 'UNKNOWN_METHOD' });
+    expect(settlePayments(total, [{ methodCode: 'VALU', amount: total }], METHODS)).toMatchObject({
+      ok: false,
+      reason: 'UNKNOWN_METHOD',
+    });
   });
 });
 
@@ -154,7 +159,9 @@ describe('voids', () => {
   });
 
   it('explains why a void is not allowed', () => {
-    expect(voidBlocker(invoice({ exportedAt: '2026-11-17T23:00:00.000Z' }), '2026-11-17', 'x')).toBe('ALREADY_EXPORTED');
+    expect(voidBlocker(invoice({ exportedAt: '2026-11-17T23:00:00.000Z' }), '2026-11-17', 'x')).toBe(
+      'ALREADY_EXPORTED',
+    );
     expect(voidBlocker(invoice(), '2026-11-18', 'x')).toBe('DIFFERENT_DAY');
     expect(voidBlocker(invoice(), '2026-11-17', '  ')).toBe('REASON_REQUIRED');
     expect(voidBlocker(invoice({ status: 'voided' }), '2026-11-17', 'x')).toBe('ALREADY_VOIDED');
@@ -168,7 +175,14 @@ describe('buildSalesReport', () => {
     invoice({
       number: 'ABC-M1-00002',
       salesPersonId: 'emp-2',
-      totals: { unitCount: 5, listTotal: 0, saleTotal: 0, defaultDiscountTotal: 0, offerDiscountTotal: 0, total: 201000 },
+      totals: {
+        unitCount: 5,
+        listTotal: 0,
+        saleTotal: 0,
+        defaultDiscountTotal: 0,
+        offerDiscountTotal: 0,
+        total: 201000,
+      },
       payments: [
         { methodCode: 'VISA', amount: 150000 },
         { methodCode: 'CASH', amount: 51000 },
@@ -192,12 +206,25 @@ describe('buildSalesReport', () => {
 
   it('breaks the summary down per sales person and per phone', () => {
     const report = buildSalesReport(invoices);
-    expect(report.bySalesPerson['emp-1']).toMatchObject({ invoiceCount: 1, total: 140000, voided: { count: 1, total: 140000 } });
-    expect(report.bySalesPerson['emp-2']).toMatchObject({ invoiceCount: 1, total: 201000, byPaymentMethod: { VISA: 150000, CASH: 51000 } });
+    expect(report.bySalesPerson['emp-1']).toMatchObject({
+      invoiceCount: 1,
+      total: 140000,
+      voided: { count: 1, total: 140000 },
+    });
+    expect(report.bySalesPerson['emp-2']).toMatchObject({
+      invoiceCount: 1,
+      total: 201000,
+      byPaymentMethod: { VISA: 150000, CASH: 51000 },
+    });
     expect(Object.keys(report.byDevice)).toEqual(['M1', 'M2']);
   });
 
   it('returns zeros for an empty day', () => {
-    expect(buildSalesReport([]).overall).toMatchObject({ invoiceCount: 0, total: 0, averageInvoice: 0, unitsPerInvoice: 0 });
+    expect(buildSalesReport([]).overall).toMatchObject({
+      invoiceCount: 0,
+      total: 0,
+      averageInvoice: 0,
+      unitsPerInvoice: 0,
+    });
   });
 });

@@ -1,11 +1,19 @@
-import { searchCatalog, type PricedCart, type PricedUnit } from '@ravin-sales/domain';
+import { normalizeBarcode, searchCatalog, type CartState, type PricedCart, type PricedUnit } from '@ravin-sales/domain';
 import { useMemo, useRef, useState } from 'react';
 import { Code, Price } from '../../components/Price.tsx';
-import { ACTIVE_OFFER, CATALOG, CATALOG_BY_CODE, type CatalogItem } from '../../config/demo.ts';
+import {
+  ACTIVE_OFFER,
+  BARCODE_INDEX,
+  CATALOG,
+  CATALOG_BY_CODE,
+  type CatalogItem,
+  type CatalogVariant,
+} from '../../config/demo.ts';
 import { useI18n } from '../../i18n/I18nProvider.tsx';
 import { tick } from '../../lib/storage.ts';
 import type { CartAction } from '../../state/cart.ts';
-import type { CartState } from '@ravin-sales/domain';
+import { ScannerView, type ScanOutcome } from '../scan/ScannerView.tsx';
+import { TestBarcodesSheet } from '../scan/TestBarcodesSheet.tsx';
 import { OfferSheet } from './OfferSheet.tsx';
 import { SizeSheet } from './SizeSheet.tsx';
 
@@ -22,7 +30,25 @@ export function SellView({ cart, priced, dispatch, onCheckout, notify }: SellVie
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<CatalogItem | null>(null);
   const [offerOpen, setOfferOpen] = useState(false);
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [testBarcodesOpen, setTestBarcodesOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
+
+  const addVariant = (item: CatalogItem, variant: CatalogVariant) => {
+    dispatch({
+      type: 'add',
+      unit: { itemCode: item.itemCode, size: variant.size, listPrice: variant.listPrice, salePrice: variant.salePrice },
+    });
+  };
+
+  /** Shared by the camera, Bluetooth/USB scanners and a barcode typed in the search box. */
+  const addByBarcode = (raw: string): ScanOutcome => {
+    const code = normalizeBarcode(raw);
+    const match = BARCODE_INDEX.get(code);
+    if (!match) return { ok: false, message: t.unknownBarcode(code) };
+    addVariant(match.item, match.variant);
+    return { ok: true, message: t.added(match.item.itemCode, match.variant.size) };
+  };
 
   const results = useMemo(() => searchCatalog(CATALOG, query, 12), [query]);
   const searching = query.trim() !== '';
@@ -43,38 +69,74 @@ export function SellView({ cart, priced, dispatch, onCheckout, notify }: SellVie
     <>
       <div className="gutter flex flex-col gap-4 pt-4 pb-40">
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="item-search" className="text-sm font-medium text-muted">
-            {t.searchLabel}
-          </label>
-          <div className="relative">
-            <input
-              id="item-search"
-              ref={searchRef}
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && results[0]) setSelected(results[0]);
-              }}
-              inputMode="numeric"
-              autoComplete="off"
-              autoFocus
-              dir="ltr"
-              placeholder={t.searchPlaceholder}
-              className="h-14 w-full rounded-2xl border-2 border-line bg-surface ps-4 pe-12 font-mono text-xl tracking-wider placeholder:font-sans placeholder:text-base placeholder:tracking-normal placeholder:text-muted focus:border-accent focus:outline-none"
-            />
-            {searching ? (
-              <button
-                type="button"
-                aria-label={t.clearSearch}
-                onClick={() => {
-                  setQuery('');
-                  searchRef.current?.focus();
+          <div className="flex items-baseline justify-between gap-2">
+            <label htmlFor="item-search" className="text-sm font-medium text-muted">
+              {t.searchLabel}
+            </label>
+            <button type="button" onClick={() => setTestBarcodesOpen(true)} className="text-sm font-medium text-accent">
+              {t.testBarcodes}
+            </button>
+          </div>
+          <div className="flex gap-2">
+            <div className="relative min-w-0 flex-1">
+              <input
+                id="item-search"
+                ref={searchRef}
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter') return;
+                  event.preventDefault();
+                  // Bluetooth/USB scanners type the barcode and press Enter.
+                  if (BARCODE_INDEX.has(normalizeBarcode(query))) {
+                    const outcome = addByBarcode(query);
+                    tick();
+                    notify(outcome.message);
+                    setQuery('');
+                  } else if (results[0]) {
+                    setSelected(results[0]);
+                  }
                 }}
-                className="absolute inset-y-0 end-2 my-auto h-10 w-10 rounded-full text-2xl leading-none text-muted"
+                inputMode="numeric"
+                autoComplete="off"
+                autoFocus
+                dir="ltr"
+                placeholder={t.searchPlaceholder}
+                className="h-14 w-full rounded-2xl border-2 border-line bg-surface ps-4 pe-12 font-mono text-xl tracking-wider placeholder:font-sans placeholder:text-base placeholder:tracking-normal placeholder:text-muted focus:border-accent focus:outline-none"
+              />
+              {searching ? (
+                <button
+                  type="button"
+                  aria-label={t.clearSearch}
+                  onClick={() => {
+                    setQuery('');
+                    searchRef.current?.focus();
+                  }}
+                  className="absolute inset-y-0 end-2 my-auto h-10 w-10 rounded-full text-2xl leading-none text-muted"
+                >
+                  ×
+                </button>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              onClick={() => setScannerOpen(true)}
+              className="flex h-14 shrink-0 items-center gap-2 rounded-2xl bg-accent px-4 font-semibold text-accent-fg"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                className="h-6 w-6"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
               >
-                ×
-              </button>
-            ) : null}
+                <path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3" />
+                <path d="M8 9v6M11 9v6M14 9v6M17 9v6" />
+              </svg>
+              {t.scan}
+            </button>
           </div>
         </div>
 
@@ -126,16 +188,24 @@ export function SellView({ cart, priced, dispatch, onCheckout, notify }: SellVie
           item={selected}
           cartUnits={cart.units}
           onAdd={(variant) => {
-            dispatch({
-              type: 'add',
-              unit: { itemCode: selected.itemCode, size: variant.size, listPrice: variant.listPrice, salePrice: variant.salePrice },
-            });
+            addVariant(selected, variant);
             tick();
             notify(t.added(selected.itemCode, variant.size));
           }}
           onClose={closeSizes}
         />
       ) : null}
+
+      {scannerOpen ? (
+        <ScannerView
+          onBarcode={addByBarcode}
+          onClose={() => setScannerOpen(false)}
+          pieceCount={totals.unitCount}
+          total={totals.total}
+        />
+      ) : null}
+
+      {testBarcodesOpen ? <TestBarcodesSheet onClose={() => setTestBarcodesOpen(false)} /> : null}
 
       {offerOpen ? (
         <OfferSheet
@@ -253,7 +323,9 @@ function CartList({
                 <Code className="font-semibold">{`${unit.itemCode} · ${unit.size}`}</Code>
                 <span className="truncate text-sm text-muted">{CATALOG_BY_CODE.get(unit.itemCode)?.name}</span>
               </div>
-              <span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${TREATMENT_STYLE[unit.treatment]}`}>
+              <span
+                className={`mt-1 inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${TREATMENT_STYLE[unit.treatment]}`}
+              >
                 {label(unit)}
               </span>
             </div>

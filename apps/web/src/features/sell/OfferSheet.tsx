@@ -74,7 +74,9 @@ export function OfferSheet({ cart, onApply, onRemove, onClose }: OfferSheetProps
             </div>
           </dl>
           {preview.customerSaving >= 0 ? (
-            <p className="font-medium text-free">{t.offerSaves(`${formatMoney(preview.customerSaving)} ${t.currency}`)}</p>
+            <p className="font-medium text-free">
+              {t.offerSaves(`${formatMoney(preview.customerSaving)} ${t.currency}`)}
+            </p>
           ) : (
             <p className="rounded-xl bg-promo-bg p-3 font-medium text-promo">
               {t.offerCostsMore(`${formatMoney(-preview.customerSaving)} ${t.currency}`)}

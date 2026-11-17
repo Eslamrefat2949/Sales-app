@@ -19,7 +19,13 @@ export { addUnit, applyOffer, createCart, removeOffer, removeUnit, type CartStat
 export { searchCatalog, sortSizes, type SearchableItem } from './catalog.ts';
 export { normalizeDigits } from './text.ts';
 export { normalizeEgyptianMobile } from './customer.ts';
-export { settlePayments, type PaymentKind, type PaymentLine, type PaymentMethod, type PaymentSettlement } from './payments.ts';
+export {
+  settlePayments,
+  type PaymentKind,
+  type PaymentLine,
+  type PaymentMethod,
+  type PaymentSettlement,
+} from './payments.ts';
 export {
   formatInvoiceNumber,
   parseInvoiceNumber,
@@ -31,3 +37,4 @@ export {
   type VoidBlocker,
 } from './invoice.ts';
 export { buildSalesReport, type SalesReport, type SalesSummary } from './reports.ts';
+export { createScanGate, defaultBarcode, normalizeBarcode } from './scan.ts';

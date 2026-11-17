@@ -4,7 +4,13 @@ import { PAYMENT_METHODS } from '../../config/demo.ts';
 import { useI18n } from '../../i18n/I18nProvider.tsx';
 
 /** The customer photographs this screen, so the invoice number dominates it. */
-export function ConfirmationView({ invoice, onNewSale }: { readonly invoice: Invoice; readonly onNewSale: () => void }) {
+export function ConfirmationView({
+  invoice,
+  onNewSale,
+}: {
+  readonly invoice: Invoice;
+  readonly onNewSale: () => void;
+}) {
   const { t, lang } = useI18n();
   const methodLabel = (code: string) => PAYMENT_METHODS.find((method) => method.code === code)?.label[lang] ?? code;
 
@@ -14,7 +20,10 @@ export function ConfirmationView({ invoice, onNewSale }: { readonly invoice: Inv
 
       <section className="flex flex-col items-center gap-2 rounded-3xl border-2 border-fg bg-surface px-4 py-8 text-center">
         <span className="text-sm tracking-wide text-muted uppercase">{t.invoiceNumber}</span>
-        <bdi dir="ltr" className="font-mono text-[clamp(1.75rem,9vw,3rem)] leading-tight font-semibold tracking-wider break-all select-all">
+        <bdi
+          dir="ltr"
+          className="font-mono text-[clamp(1.75rem,9vw,3rem)] leading-tight font-semibold tracking-wider break-all select-all"
+        >
           {invoice.number}
         </bdi>
         <span className="text-lg font-semibold">

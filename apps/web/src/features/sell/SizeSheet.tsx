@@ -43,7 +43,9 @@ export function SizeSheet({ item, cartUnits, onAdd, onClose }: SizeSheetProps) {
       <p className="mb-3 text-sm text-muted">{t.sizeHint}</p>
       <div className="grid grid-cols-3 gap-2 pb-1 sm:grid-cols-4">
         {variants.map((variant) => {
-          const count = cartUnits.filter((unit) => unit.itemCode === item.itemCode && unit.size === variant.size).length;
+          const count = cartUnits.filter(
+            (unit) => unit.itemCode === item.itemCode && unit.size === variant.size,
+          ).length;
           return (
             <button
               key={variant.size}

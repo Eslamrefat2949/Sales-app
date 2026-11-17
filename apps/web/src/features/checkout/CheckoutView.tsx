@@ -44,7 +44,9 @@ export function CheckoutView({ priced, knownCustomers, onBack, onConfirm }: Chec
   const tendered = parsed?.reduce((sum, line) => sum + line.amount, 0) ?? 0;
 
   const fillRest = (code: string) => {
-    const others = (parsed ?? []).filter((line) => line.methodCode !== code).reduce((sum, line) => sum + line.amount, 0);
+    const others = (parsed ?? [])
+      .filter((line) => line.methodCode !== code)
+      .reduce((sum, line) => sum + line.amount, 0);
     setAmounts((current) => ({ ...current, [code]: moneyToInput(Math.max(0, total - others)) }));
   };
 

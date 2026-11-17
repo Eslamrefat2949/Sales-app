@@ -29,12 +29,12 @@ Implemented in `packages/domain/src/pricing.ts` and `money.ts`.
   the 2 most expensive are **paid at the sale price, without the extra 30%**, and the next 2 are
   **free**. Pieces left over (always the cheapest) get the default 30%.
 
-| Pieces | Paid (sale price) | Free | Default 30% |
-| ------ | ----------------- | ---- | ----------- |
-| 4      | #1 #2             | #3 #4 | none       |
-| 5      | #1 #2             | #3 #4 | #5         |
-| 7      | #1 #2             | #3 #4 | #5 #6 #7   |
-| 8      | #1 to #4          | #5 to #8 | none    |
+| Pieces | Paid (sale price) | Free     | Default 30% |
+| ------ | ----------------- | -------- | ----------- |
+| 4      | #1 #2             | #3 #4    | none        |
+| 5      | #1 #2             | #3 #4    | #5          |
+| 7      | #1 #2             | #3 #4    | #5 #6 #7    |
+| 8      | #1 to #4          | #5 to #8 | none        |
 
 Worked example (sale prices 1000, 800, 600, 400, 300): 1000 + 800 + 0 + 0 + 210 = **2,010**.
 Without the offer the same cart costs 2,170.
@@ -57,10 +57,20 @@ Implemented in `packages/domain/src/offer.ts`, `pricing.ts` and `cart.ts`.
   - Results appear while typing, from the catalog stored on the phone (works offline).
   - Selecting an item shows **all sizes of that item** (no stock filter) as large buttons; tapping a
     size adds one piece, tapping again adds another.
-- **Camera scanning** is available for pieces that have a barcode. Barcode format is `ITEMCODE-SIZE`;
-  lookup matches the full barcode exactly (never split on the dash).
+- **Barcode scanner (required).** Barcode format is `ITEMCODE-SIZE`; lookup matches the full barcode
+  exactly (never split on the dash, since sizes like `2-3Y` contain one).
+  - **Phone camera:** the camera stays open and scans continuously. Each new barcode adds one piece with a
+    beep, a vibration and a green frame; an unknown barcode gives an error tone, a red frame and shows the
+    code that was read. The running total stays on screen. A flash button appears where the phone supports it.
+  - The same barcode is ignored while it stays in view and is accepted again after it has been out of view
+    for 1.5 seconds, so one label is never added twice by accident. A second identical piece is scanned
+    again (or added with the size button).
+  - Uses the phone's built-in reader where available (Chrome on Android) and a bundled reading engine
+    elsewhere (iPhone, desktop). The engine ships with the app, so scanning works offline.
+  - **Bluetooth/USB scanners** work too: they type the barcode into the search box and press Enter, which
+    adds the piece directly.
 
-Search and size ordering are implemented in `packages/domain/src/catalog.ts`.
+Search and size ordering are implemented in `packages/domain/src/catalog.ts`, barcode handling in `scan.ts`.
 
 ## 5. Invoice
 
@@ -136,10 +146,11 @@ by whoever holds the phone), plus the branch total:
 
 ## 13. Infrastructure
 
-- A dedicated Supabase project named **RAVIN SALES APP**, separate from the existing projects.
-- **OPEN:** the free plan allows two active projects and both are in use. The owner will free a slot by
-  pausing or deleting an unused project, then the new project is created on the free plan. Before the
-  rollout to all branches, revisit the Pro plan for daily backups.
+- Supabase project **RAVIN SALES APP** (Frankfurt, `eu-central-1`), separate from the existing projects.
+  It runs on the free plan for development and the pilot. Before the rollout to all branches, move to
+  the Pro plan for daily backups.
+- **OPEN:** hosting for the app itself (needed for the camera, which the shareable demo link blocks).
+  Recommended: Cloudflare Pages (free plan allows commercial use), deployed from the GitHub repository.
 
 ## Open items
 
@@ -149,4 +160,4 @@ by whoever holds the phone), plus the branch total:
 4. Item list from Odoo (item code, name, size, barcode if any, list price, sale price). No branch stock.
 5. Employee list (name, branch, name as in Odoo).
 6. Final price rounding (piasters or whole pounds).
-7. Free a Supabase project slot (pause or delete an unused project).
+7. Hosting for the app (Cloudflare Pages recommended).

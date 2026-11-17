@@ -10,7 +10,13 @@ export default defineConfig(({ mode }) => {
     plugins: [react(), tailwindcss()],
     base: artifact ? './' : '/',
     build: artifact
-      ? { outDir: 'dist-artifact', modulePreload: false, cssCodeSplit: false, assetsInlineLimit: 100_000_000 }
+      ? {
+          outDir: 'dist-artifact',
+          modulePreload: false,
+          cssCodeSplit: false,
+          // Inline everything except the barcode engine: the demo viewer has no camera, so it is never loaded there.
+          assetsInlineLimit: (filePath: string) => !filePath.endsWith('.wasm'),
+        }
       : { outDir: 'dist' },
   };
 });

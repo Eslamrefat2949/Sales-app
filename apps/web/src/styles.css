@@ -1,4 +1,4 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 /*
   Layout: one-screen phone app. Sticky header, scrolling work area, fixed action bar at the thumb.
@@ -23,13 +23,16 @@
   --danger: #b42318;
   --danger-bg: #fdeceb;
   --scrim: rgb(9 14 19 / 0.45);
+  /* The camera view stays dark in both themes. */
+  --camera: #05080b;
+  --camera-fg: #f4f7f9;
 
-  --font-ui: "IBM Plex Sans Arabic", "Segoe UI", Tahoma, system-ui, sans-serif;
-  --font-code: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --font-ui: 'IBM Plex Sans Arabic', 'Segoe UI', Tahoma, system-ui, sans-serif;
+  --font-code: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
+  :root:not([data-theme='light']) {
     --bg: #0d1318;
     --surface: #151d24;
     --surface-2: #1d2731;
@@ -51,7 +54,7 @@
   }
 }
 
-:root[data-theme="dark"] {
+:root[data-theme='dark'] {
   --bg: #0d1318;
   --surface: #151d24;
   --surface-2: #1d2731;
@@ -90,6 +93,8 @@
   --color-danger: var(--danger);
   --color-danger-bg: var(--danger-bg);
   --color-scrim: var(--scrim);
+  --color-camera: var(--camera);
+  --color-camera-fg: var(--camera-fg);
   --font-sans: var(--font-ui);
   --font-mono: var(--font-code);
 }
@@ -111,7 +116,7 @@ body {
 
 /* Paints the strip above the sticky header on phones with a notch. */
 body::before {
-  content: "";
+  content: '';
   position: fixed;
   inset: 0 0 auto;
   height: env(safe-area-inset-top, 0px);
@@ -126,6 +131,9 @@ body::before {
   }
   .pb-safe {
     padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
+  }
+  .pt-safe {
+    padding-top: max(12px, env(safe-area-inset-top, 0px));
   }
   .top-safe {
     top: env(safe-area-inset-top, 0px);

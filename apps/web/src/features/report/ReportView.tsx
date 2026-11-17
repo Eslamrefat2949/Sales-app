@@ -18,8 +18,14 @@ const employeeName = (id: string) => EMPLOYEES.find((employee) => employee.id ==
 export function ReportView({ invoices, businessDate, onVoid, notify }: ReportViewProps) {
   const { t, lang } = useI18n();
   const [scope, setScope] = useState('');
-  const today = useMemo(() => invoices.filter((invoice) => invoice.businessDate === businessDate), [invoices, businessDate]);
-  const visible = useMemo(() => (scope ? today.filter((invoice) => invoice.salesPersonId === scope) : today), [today, scope]);
+  const today = useMemo(
+    () => invoices.filter((invoice) => invoice.businessDate === businessDate),
+    [invoices, businessDate],
+  );
+  const visible = useMemo(
+    () => (scope ? today.filter((invoice) => invoice.salesPersonId === scope) : today),
+    [today, scope],
+  );
   const report = useMemo(() => buildSalesReport(visible), [visible]);
   const summary = report.overall;
   const methodLabel = (code: string) => PAYMENT_METHODS.find((method) => method.code === code)?.label[lang] ?? code;
@@ -54,7 +60,11 @@ export function ReportView({ invoices, businessDate, onVoid, notify }: ReportVie
             ))}
           </select>
         </div>
-        <button type="button" onClick={copySummary} className="h-12 rounded-2xl bg-accent px-4 font-semibold text-accent-fg">
+        <button
+          type="button"
+          onClick={copySummary}
+          className="h-12 rounded-2xl bg-accent px-4 font-semibold text-accent-fg"
+        >
           {t.copySummary}
         </button>
       </div>
@@ -84,7 +94,9 @@ export function ReportView({ invoices, businessDate, onVoid, notify }: ReportVie
             ))}
             <li className="mt-1 flex justify-between border-t border-line pt-2 text-danger">
               <span>{t.voided}</span>
-              <span className="tabular">{t.voidedSummary(summary.voided.count, `${formatMoney(summary.voided.total)} ${t.currency}`)}</span>
+              <span className="tabular">
+                {t.voidedSummary(summary.voided.count, `${formatMoney(summary.voided.total)} ${t.currency}`)}
+              </span>
             </li>
           </ul>
         </section>
@@ -126,7 +138,9 @@ export function ReportView({ invoices, businessDate, onVoid, notify }: ReportVie
 
       <details className="text-sm text-muted">
         <summary className="cursor-pointer">{t.copySummary}</summary>
-        <pre className="mt-2 overflow-x-auto rounded-2xl bg-surface p-3 font-mono text-xs whitespace-pre-wrap select-all">{summaryText}</pre>
+        <pre className="mt-2 overflow-x-auto rounded-2xl bg-surface p-3 font-mono text-xs whitespace-pre-wrap select-all">
+          {summaryText}
+        </pre>
       </details>
     </div>
   );
@@ -155,7 +169,9 @@ function buildSummaryText(
     `${t.sales}: ${money(summary.total)}`,
     `${t.invoicesLabel}: ${summary.invoiceCount} · ${t.piecesLabel}: ${summary.unitCount}`,
     `${t.averageInvoice}: ${money(summary.averageInvoice)}`,
-    ...PAYMENT_METHODS.map((method) => `${methodLabel(method.code)}: ${money(summary.byPaymentMethod[method.code] ?? 0)}`),
+    ...PAYMENT_METHODS.map(
+      (method) => `${methodLabel(method.code)}: ${money(summary.byPaymentMethod[method.code] ?? 0)}`,
+    ),
     `${t.voided}: ${t.voidedSummary(summary.voided.count, money(summary.voided.total))}`,
   ].join('\n');
 }
@@ -179,20 +195,33 @@ function InvoiceRow({
 
   return (
     <li className={`rounded-2xl bg-surface ${voided ? 'opacity-70' : ''}`}>
-      <button type="button" onClick={() => setOpen((value) => !value)} aria-expanded={open} className="flex w-full items-center gap-3 p-3 text-start">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-3 p-3 text-start"
+      >
         <div className="min-w-0 flex-1">
           <Code className={`font-semibold ${voided ? 'line-through' : ''}`}>{invoice.number}</Code>
           <div className="truncate text-xs text-muted">
-            <bdi className="tabular">{formatTime(invoice.createdAt, lang)}</bdi> · {employeeName(invoice.salesPersonId)} · {t.pieces(invoice.totals.unitCount)}
+            <bdi className="tabular">{formatTime(invoice.createdAt, lang)}</bdi> · {employeeName(invoice.salesPersonId)}{' '}
+            · {t.pieces(invoice.totals.unitCount)}
           </div>
         </div>
-        {voided ? <span className="rounded-full bg-danger-bg px-2 py-0.5 text-xs font-semibold text-danger">{t.voidedBadge}</span> : null}
+        {voided ? (
+          <span className="rounded-full bg-danger-bg px-2 py-0.5 text-xs font-semibold text-danger">
+            {t.voidedBadge}
+          </span>
+        ) : null}
         <Price amount={invoice.totals.total} className="font-semibold" />
       </button>
       {open ? (
         <div className="flex flex-col gap-3 border-t border-line p-3">
           <div className="text-sm">
-            {invoice.customer.name} · <bdi dir="ltr" className="tabular">{invoice.customer.mobile}</bdi>
+            {invoice.customer.name} ·{' '}
+            <bdi dir="ltr" className="tabular">
+              {invoice.customer.mobile}
+            </bdi>
           </div>
           <ul className="flex flex-col gap-1 text-sm">
             {invoice.lines.map((line) => (
@@ -205,7 +234,9 @@ function InvoiceRow({
             ))}
           </ul>
           <div className="text-sm text-muted">
-            {invoice.payments.map((payment) => `${methodLabel(payment.methodCode)} ${formatMoney(payment.amount)}`).join(' · ')}
+            {invoice.payments
+              .map((payment) => `${methodLabel(payment.methodCode)} ${formatMoney(payment.amount)}`)
+              .join(' · ')}
           </div>
           {voided ? (
             <p className="text-sm text-danger">
@@ -237,7 +268,11 @@ function InvoiceRow({
                 placeholder={t.voidReasonPlaceholder}
                 className="h-12 min-w-0 flex-1 rounded-xl border-2 border-line bg-bg px-3"
               />
-              <button type="submit" disabled={reason.trim() === ''} className="h-12 rounded-xl bg-danger px-4 font-semibold text-surface disabled:opacity-40">
+              <button
+                type="submit"
+                disabled={reason.trim() === ''}
+                className="h-12 rounded-xl bg-danger px-4 font-semibold text-surface disabled:opacity-40"
+              >
                 {t.confirmVoid}
               </button>
               {error ? <p className="text-sm text-danger">{error}</p> : null}
