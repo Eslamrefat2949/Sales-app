@@ -7,13 +7,16 @@ import { AnimatedMoney, StatTile } from '../../components/Tiles.tsx';
 import { useNotify } from '../../components/Toast.tsx';
 import type { AppConfig } from '../../data/appData.ts';
 import {
-  downloadBatchAgain,
-  exportNewBatch,
+  batchDates,
+  closeDay,
   fetchOpenInvoices,
   listExportBatches,
   mergeWithPending,
+  odooSheet,
+  openBatch,
   previewExport,
   voidInvoiceOnServer,
+  type ClosedDay,
   type ExportBatch,
   type ExportPreview,
   type ReportInvoice,
@@ -22,7 +25,9 @@ import type { BranchSync } from '../../data/branchSync.ts';
 import { useI18n } from '../../i18n/I18nProvider.tsx';
 import type { Messages } from '../../i18n/messages.ts';
 import { businessDateOf, formatMoney, formatTime } from '../../lib/format.ts';
+import { downloadBlob } from '../../lib/files.ts';
 import { errorCode } from '../../lib/supabase.ts';
+import { ClosingSheet } from './ClosingSheet.tsx';
 
 export function ReportView({ config, sync }: { readonly config: AppConfig; readonly sync: BranchSync }) {
   const { t, lang } = useI18n();
@@ -33,19 +38,26 @@ export function ReportView({ config, sync }: { readonly config: AppConfig; reado
   const [loadFailed, setLoadFailed] = useState(false);
   const [scope, setScope] = useState('');
   const [closing, setClosing] = useState<ExportPreview | null>(null);
-  const [again, setAgain] = useState<ExportBatch | null>(null);
+  const [register, setRegister] = useState<{
+    readonly closed: ClosedDay;
+    readonly fresh: boolean;
+    readonly sheetDownloaded: boolean;
+  } | null>(null);
   const [busy, setBusy] = useState(false);
+  const closeRegister = useCallback(() => setRegister(null), []);
 
   const refresh = useCallback(async () => {
     try {
-      const [invoices, history] = await Promise.all([fetchOpenInvoices(config, today), listExportBatches()]);
+      // The report counts from the last close, so the history comes first.
+      const history = await listExportBatches();
+      const invoices = await fetchOpenInvoices(config, history[0]?.createdAt ?? null);
       setServer(invoices);
       setBatches(history);
       setLoadFailed(false);
     } catch {
       setLoadFailed(true);
     }
-  }, [config, today]);
+  }, [config]);
 
   useEffect(() => {
     void refresh();
@@ -80,28 +92,40 @@ export function ReportView({ config, sync }: { readonly config: AppConfig; reado
     }
   };
 
+  /** Closes the day, downloads the Odoo sheet and opens the closing register with the photo to save. */
   const close = async () => {
     setBusy(true);
     try {
-      const result = await exportNewBatch(config);
-      notify(result ? t.exportDone(result.invoiceCount) : t.exportNothing, result ? 'success' : 'info');
+      const closed = await closeDay(config);
       setClosing(null);
-      await refresh();
-    } catch {
-      notify(t.genericError, 'error');
+      if (!closed) {
+        notify(t.exportNothing, 'info');
+        return;
+      }
+      let sheetDownloaded = false;
+      try {
+        const sheet = await odooSheet(config, closed);
+        downloadBlob(sheet.blob, sheet.fileName);
+        sheetDownloaded = true;
+      } catch {
+        // The register below has a download button for the sheet.
+      }
+      setRegister({ closed, fresh: true, sheetDownloaded });
+      notify(t.exportDone(closed.batch.invoiceCount), 'success');
+      void refresh();
+    } catch (error) {
+      notify(errorCode(error) === 'OFFLINE' ? t.pinOffline : t.genericError, 'error');
     } finally {
       setBusy(false);
     }
   };
 
-  const downloadAgain = async (batch: ExportBatch) => {
+  const openRegister = async (batch: ExportBatch) => {
     setBusy(true);
     try {
-      await downloadBatchAgain(config, batch);
-      setAgain(null);
-      await refresh();
-    } catch {
-      notify(t.genericError, 'error');
+      setRegister({ closed: await openBatch(config, batch.id), fresh: false, sheetDownloaded: false });
+    } catch (error) {
+      notify(errorCode(error) === 'OFFLINE' ? t.pinOffline : t.genericError, 'error');
     } finally {
       setBusy(false);
     }
@@ -225,26 +249,26 @@ export function ReportView({ config, sync }: { readonly config: AppConfig; reado
                 <li key={batch.id} className="flex items-center gap-3 rounded-2xl bg-surface-2 p-3">
                   <div className="min-w-0 flex-1">
                     <div className="text-sm font-semibold">
-                      <bdi className="tabular">
-                        {new Date(batch.createdAt).toLocaleString(lang === 'ar' ? 'ar-EG-u-nu-latn' : 'en-GB', {
-                          day: '2-digit',
-                          month: 'short',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
+                      {t.salesDate}{' '}
+                      <bdi dir="ltr" className="tabular">
+                        {batchDates(batch)}
                       </bdi>{' '}
                       · {t.invoices(batch.invoiceCount)}
                     </div>
                     <div className="text-xs text-muted">
-                      <Price amount={batch.total} /> · {t.downloadedTimes(batch.downloadCount)}
+                      <Price amount={batch.total} /> ·{' '}
+                      <bdi className="tabular">{formatTime(batch.createdAt, lang)}</bdi> ·{' '}
+                      {t.downloadedTimes(batch.downloadCount)}
                     </div>
                   </div>
                   <button
                     type="button"
-                    onClick={() => setAgain(batch)}
-                    className="press shrink-0 rounded-xl bg-surface px-3 py-2 text-sm font-semibold text-primary shadow-sm"
+                    disabled={busy}
+                    onClick={() => void openRegister(batch)}
+                    className="press flex shrink-0 items-center gap-1.5 rounded-xl bg-surface px-3 py-2 text-sm font-semibold text-primary shadow-sm disabled:opacity-50"
                   >
-                    {t.downloadAgain}
+                    <Icon name="receipt" className="h-4 w-4" />
+                    {t.openClosing}
                   </button>
                 </li>
               ))}
@@ -263,7 +287,7 @@ export function ReportView({ config, sync }: { readonly config: AppConfig; reado
               <InvoiceRow
                 key={invoice.number}
                 invoice={invoice}
-                employeeName={employeeName(invoice.salesPersonId)}
+                employeeName={(invoice.salesPersonName ?? employeeName(invoice.salesPersonId)).replace(/^\d+-/, '')}
                 methodLabel={methodLabel}
                 onVoided={() => void refresh()}
               />
@@ -305,20 +329,15 @@ export function ReportView({ config, sync }: { readonly config: AppConfig; reado
         </Sheet>
       ) : null}
 
-      {again ? (
-        <Sheet title={t.downloadAgain} closeLabel={t.cancel} onClose={() => setAgain(null)}>
-          <div className="flex flex-col gap-4 pb-2">
-            <p className="rounded-2xl bg-promo-bg p-3 text-sm text-promo">{t.exportAgainWarning}</p>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void downloadAgain(again)}
-              className="press h-14 rounded-2xl bg-primary text-lg font-semibold text-primary-fg disabled:opacity-50"
-            >
-              {t.downloadAgain}
-            </button>
-          </div>
-        </Sheet>
+      {register ? (
+        <ClosingSheet
+          config={config}
+          closed={register.closed}
+          fresh={register.fresh}
+          sheetDownloaded={register.sheetDownloaded}
+          onClose={closeRegister}
+          onRecorded={() => void refresh()}
+        />
       ) : null}
     </div>
   );

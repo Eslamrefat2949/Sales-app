@@ -183,15 +183,47 @@ Implemented in `packages/domain/src/offer.ts`, `pricing.ts` and `cart.ts`.
   own reserved invoice numbers.
 - **Design:** bright blue, friendly style following the owner's reference mock-ups (gradient header,
   white rounded cards, pastel stat tiles, light motion).
-- A hidden-from-production test branch `TST` exists for training and testing.
+- A test branch `TST` was used for training and testing; it is switched off for go-live.
+
+## Go-live decisions (18 Nov 2026)
+
+- **All 33 branches** sign in from the list with their own 6-digit PIN (handed out by the admins,
+  changeable in Management > PINs). Admin names show as "Mr ESLAM REFAT", "Mr SAMEH AHMED",
+  "Mr MOHAMED YOUSEF", "Mr AHMED HAMDY".
+- **Sales people are per branch.** A branch only receives and only can read its own staff (enforced
+  by the server, not just hidden in the screen). Admins see everyone. Someone moved to another branch
+  still shows on the old branch's past invoices and sheets.
+- **Staff upload (Management > Staff):** a sheet with Employee (name exactly as in Odoo), Branch (code)
+  and Status (Active / Left), one row per person per branch. For every person in the sheet, the listed
+  branches become their branches and other links are switched off; "Left" removes them from every
+  branch; people not in the sheet are not touched. Unknown branch codes block the upload. "Current
+  staff" downloads today's list in the same layout to edit and upload back.
+- **Templates:** every sheet the app accepts (item list, items without discount, staff) has a
+  "Template" button with an example and a "How to" tab. The items-without-discount list can also be
+  uploaded as a sheet (Item Code column; full barcodes are cut to the item code).
+- **Sheet name:** the Odoo sheet is named after the branch and the day it sold, e.g.
+  `OCT - 6th of October Outlet Mall - 2026-11-18.xlsx` (a range when late invoices from an earlier day
+  are in the same close).
+- **Closing register:** closing the day downloads the sheet and opens the closing photo with a clear
+  "save this photo" prompt: branch, sale date, close time, total, invoices, pieces, average, voids since
+  the previous close, each payment method and each sales person. "Save the photo" stores it on the
+  phone (on iPhone through the share sheet's "Save Image"); "Share" sends it on WhatsApp. Every earlier
+  close in the history reopens with its photo and sheet.
+- **Invoice numbers never repeat and never restart** - not after a close, not the next day. The branch
+  counter lives on the server and only moves forward; each phone takes a block of 100 numbers from it,
+  so numbers can jump between phones (e.g. OCT-APP-000003 then OCT-APP-000101) but are never reused.
+  The database also refuses a duplicate number.
+- After a close the report starts again from zero, including the voided list.
 
 ## Open items
 
-1. Updated POS Import form with the discount column.
-2. Item list (with the "takes discount" flag).
-3. Items without discount: also excluded from the offer?
-4. 6-piece offer case (Mall of Egypt 12002172).
-5. Aman Sales, We Vouchers, WePoint.
-6. Branch `OCT` invoice prefix (`OCT` or `OCT2`).
-7. Area manager role: wanted, and which branches per manager.
-8. Admin emails.
+1. Items without discount: also excluded from the offer? (Today: yes, they sell at the price after.)
+2. 6-piece offer case (Mall of Egypt 12002172).
+3. Aman Sales, We Vouchers, WePoint.
+4. Area manager role: wanted, and which branches per manager.
+5. Does Odoo keep our order_ref (e.g. OCT-APP-000003) on the imported order? If not, the POS Import
+   module should store it as the receipt / pos_reference.
+6. Supabase Pro plan (daily backups) before all branches sell every day.
+
+Resolved: the POS Import discount column works in Odoo 19; the item list is loaded; the `OCT`
+invoice prefix stays `OCT` (journals use `OCT2`).

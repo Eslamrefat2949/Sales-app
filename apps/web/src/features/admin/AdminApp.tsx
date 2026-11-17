@@ -1,9 +1,14 @@
 import {
   findItemListColumns,
+  findStaffColumns,
   normalizeDigits,
   prepareCatalogImport,
+  prepareStaffImport,
+  readItemCodes,
   readItemListRows,
+  readStaffRows,
   type CatalogImport,
+  type StaffImport,
 } from '@ravin-sales/domain';
 import { readSheet } from 'read-excel-file/browser';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
@@ -14,25 +19,31 @@ import { useNotify } from '../../components/Toast.tsx';
 import {
   fetchBranchesToday,
   listAccounts,
+  listBranchCodes,
+  listStaffRows,
   loadSettings,
   saveDefaultDiscount,
   saveOffer,
   setAccountPin,
   setItemsDiscountable,
   uploadProducts,
+  uploadStaff,
   type AccountRow,
   type BranchToday,
   type OfferRow,
 } from '../../data/admin.ts';
 import type { LoadedData } from '../../data/appData.ts';
+import { downloadTemplate, type TemplateKind } from '../../data/templates.ts';
 import { useI18n } from '../../i18n/I18nProvider.tsx';
-import { formatTime } from '../../lib/format.ts';
+import { businessDateOf, formatTime } from '../../lib/format.ts';
+import { errorCode } from '../../lib/supabase.ts';
 import { BranchHeader } from '../branch/BranchApp.tsx';
 
-type Tab = 'dashboard' | 'items' | 'settings' | 'pins';
+type Tab = 'dashboard' | 'items' | 'staff' | 'settings' | 'pins';
 const TABS: readonly { readonly tab: Tab; readonly icon: IconName }[] = [
   { tab: 'dashboard', icon: 'chart' },
   { tab: 'items', icon: 'tag' },
+  { tab: 'staff', icon: 'users' },
   { tab: 'settings', icon: 'settings' },
   { tab: 'pins', icon: 'key' },
 ];
@@ -43,6 +54,7 @@ export function AdminApp({ data }: { readonly data: LoadedData }) {
   const label: Record<Tab, string> = {
     dashboard: t.tabDashboard,
     items: t.tabItems,
+    staff: t.tabStaff,
     settings: t.tabSettings,
     pins: t.tabPins,
   };
@@ -72,6 +84,8 @@ export function AdminApp({ data }: { readonly data: LoadedData }) {
           <Dashboard />
         ) : tab === 'items' ? (
           <Items />
+        ) : tab === 'staff' ? (
+          <Staff />
         ) : tab === 'settings' ? (
           <Settings />
         ) : (
@@ -85,22 +99,63 @@ export function AdminApp({ data }: { readonly data: LoadedData }) {
 function Card({
   title,
   icon,
+  template,
   children,
 }: {
   readonly title: string;
   readonly icon: IconName;
+  /** Shows a button that downloads the upload template of this card. */
+  readonly template?: TemplateKind;
   readonly children: ReactNode;
 }) {
   return (
     <section className="animate-rise flex flex-col gap-4 rounded-3xl bg-surface p-5 shadow-card">
-      <h2 className="flex items-center gap-3 font-display text-lg font-semibold">
-        <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-tile-blue text-tile-blue-fg">
-          <Icon name={icon} />
-        </span>
-        {title}
-      </h2>
+      <div className="flex items-center gap-3">
+        <h2 className="flex min-w-0 flex-1 items-center gap-3 font-display text-lg font-semibold">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-tile-blue text-tile-blue-fg">
+            <Icon name={icon} />
+          </span>
+          {title}
+        </h2>
+        {template ? <TemplateButton kind={template} /> : null}
+      </div>
       {children}
     </section>
+  );
+}
+
+function TemplateButton({ kind }: { readonly kind: TemplateKind }) {
+  const { t } = useI18n();
+  const notify = useNotify();
+  return (
+    <button
+      type="button"
+      onClick={() => void downloadTemplate(kind).catch(() => notify(t.genericError, 'error'))}
+      className="press flex shrink-0 items-center gap-1.5 rounded-xl bg-primary-soft px-3 py-2 text-sm font-semibold text-primary"
+    >
+      <Icon name="file" className="h-4 w-4" />
+      {t.downloadTemplate}
+    </button>
+  );
+}
+
+/** The dashed "choose a file" button used by every upload. */
+function FilePicker({ label, onFile }: { readonly label: string; readonly onFile: (file: File) => void }) {
+  return (
+    <label className="press flex h-14 cursor-pointer items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-primary/40 bg-primary-soft font-semibold text-primary">
+      <Icon name="upload" />
+      {label}
+      <input
+        type="file"
+        accept=".xlsx"
+        className="sr-only"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file) onFile(file);
+          event.target.value = '';
+        }}
+      />
+    </label>
   );
 }
 
@@ -223,6 +278,16 @@ function Items() {
     }
   };
 
+  const readCodes = async (file: File) => {
+    try {
+      const list = readItemCodes(await readSheet(file));
+      setCodes(list.join('\n'));
+      notify(t.codesRead(list.length), 'info');
+    } catch {
+      notify(t.genericError, 'error');
+    }
+  };
+
   const applyDiscountFlag = async (discountable: boolean) => {
     const list = [
       ...new Set(
@@ -245,22 +310,9 @@ function Items() {
 
   return (
     <>
-      <Card title={t.itemsTitle} icon="upload">
+      <Card title={t.itemsTitle} icon="upload" template="items">
         <p className="text-sm text-muted">{t.itemsHint}</p>
-        <label className="press flex h-14 cursor-pointer items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-primary/40 bg-primary-soft font-semibold text-primary">
-          <Icon name="upload" />
-          {t.chooseFile}
-          <input
-            type="file"
-            accept=".xlsx"
-            className="sr-only"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) void read(file);
-              event.target.value = '';
-            }}
-          />
-        </label>
+        <FilePicker label={t.chooseFile} onFile={(file) => void read(file)} />
         {prepared ? (
           <div className="grid grid-cols-2 gap-3">
             <StatTile tone="green" icon="check" label={t.previewSellable(n(prepared.products.length))}>
@@ -298,8 +350,9 @@ function Items() {
         ) : null}
       </Card>
 
-      <Card title={t.noDiscountTitle} icon="tag">
+      <Card title={t.noDiscountTitle} icon="tag" template="noDiscount">
         <p className="text-sm text-muted">{t.noDiscountHint}</p>
+        <FilePicker label={t.uploadSheetCodes} onFile={(file) => void readCodes(file)} />
         <textarea
           value={codes}
           onChange={(event) => setCodes(event.target.value)}
@@ -328,6 +381,123 @@ function Items() {
         </div>
       </Card>
     </>
+  );
+}
+
+function Staff() {
+  const { t } = useI18n();
+  const notify = useNotify();
+  const [prepared, setPrepared] = useState<StaffImport | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const read = async (file: File) => {
+    setPrepared(null);
+    setStatus(t.reading);
+    try {
+      const [rows, codes] = await Promise.all([readSheet(file), listBranchCodes()]);
+      const columns = findStaffColumns(rows[0] ?? []);
+      if ('missing' in columns) {
+        setStatus(t.missingColumns(columns.missing.join(', ')));
+        return;
+      }
+      const result = prepareStaffImport(readStaffRows(rows, columns), codes);
+      setPrepared(result);
+      setStatus(
+        result.unknownBranches.length > 0
+          ? t.unknownBranches(result.unknownBranches.join(', '))
+          : result.invalid.length > 0
+            ? t.invalidRows(result.invalid.slice(0, 8).join(', '))
+            : null,
+      );
+    } catch {
+      setStatus(t.genericError);
+    }
+  };
+
+  const upload = async () => {
+    if (!prepared) return;
+    setBusy(true);
+    try {
+      const result = await uploadStaff(prepared.rows);
+      setStatus(t.staffDone(result.added, result.left, result.activeEmployees));
+      notify(t.saved, 'success');
+      setPrepared(null);
+    } catch (error) {
+      const message = error && typeof error === 'object' && 'message' in error ? String(error.message) : '';
+      setStatus(
+        errorCode(error) === 'UNKNOWN_BRANCH'
+          ? t.unknownBranches(message.replace(/^UNKNOWN_BRANCH\s*/, ''))
+          : t.genericError,
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const downloadCurrent = async () => {
+    setBusy(true);
+    try {
+      const rows = await listStaffRows();
+      await downloadTemplate(
+        'staff',
+        rows.map((row) => [row.name, row.branch, 'Active']),
+        `RAVIN Sales - Staff ${businessDateOf(new Date())}.xlsx`,
+      );
+    } catch {
+      notify(t.genericError, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const blocked = !prepared || prepared.rows.length === 0 || prepared.unknownBranches.length > 0;
+
+  return (
+    <Card title={t.staffTitle} icon="users" template="staff">
+      <p className="text-sm text-muted">{t.staffHint}</p>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => void downloadCurrent()}
+        className="press flex h-12 items-center justify-center gap-2 rounded-2xl bg-surface-2 font-semibold disabled:opacity-50"
+      >
+        <Icon name="download" className="h-4 w-4" />
+        {t.downloadCurrentStaff}
+      </button>
+      <FilePicker label={t.chooseFile} onFile={(file) => void read(file)} />
+      {prepared ? (
+        <div className="grid grid-cols-2 gap-3">
+          <StatTile tone="blue" icon="users" label={t.staffPeople}>
+            {prepared.people}
+          </StatTile>
+          <StatTile tone="green" icon="check" label={t.staffRowsLabel}>
+            {prepared.rows.length}
+          </StatTile>
+          <StatTile tone="amber" icon="logout" label={t.staffLeaving}>
+            {prepared.leaving.length}
+          </StatTile>
+          <StatTile tone="purple" icon="close" label={t.staffInvalid}>
+            {prepared.invalid.length + prepared.unknownBranches.length}
+          </StatTile>
+        </div>
+      ) : null}
+      {status ? (
+        <p className="rounded-2xl bg-surface-2 p-3 text-sm" role="status">
+          {status}
+        </p>
+      ) : null}
+      {prepared ? (
+        <button
+          type="button"
+          disabled={busy || blocked}
+          onClick={() => void upload()}
+          className="press h-14 rounded-2xl bg-primary font-semibold text-primary-fg disabled:opacity-50"
+        >
+          {t.upload}
+        </button>
+      ) : null}
+    </Card>
   );
 }
 

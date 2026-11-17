@@ -1,4 +1,4 @@
-import type { CatalogProduct } from '@ravin-sales/domain';
+import type { CatalogProduct, StaffRow } from '@ravin-sales/domain';
 import { supabase, unwrap } from '../lib/supabase.ts';
 
 export interface BranchToday {
@@ -151,4 +151,53 @@ export async function listAccounts(): Promise<AccountRow[]> {
 
 export async function setAccountPin(accountId: string, pin: string): Promise<void> {
   unwrap(await supabase.rpc('admin_set_pin', { p_account_id: accountId, p_pin: pin }));
+}
+
+// ---------------------------------------------------------------------------------------------
+// Staff (sales people per branch)
+// ---------------------------------------------------------------------------------------------
+
+/** Active branch codes, to check a staff sheet before it is uploaded. */
+export async function listBranchCodes(): Promise<string[]> {
+  const rows = unwrap(await supabase.from('branches').select('code').eq('is_active', true).order('code')) as {
+    code: string;
+  }[];
+  return rows.map((row) => row.code);
+}
+
+/** The current staff in the staff-sheet layout: one row per person per active branch. */
+export async function listStaffRows(): Promise<StaffRow[]> {
+  const rows = unwrap(
+    await supabase
+      .from('employees')
+      .select('odoo_name, employee_branches(is_active, branches(code, is_active))')
+      .eq('is_active', true)
+      .order('odoo_name'),
+  ) as unknown as {
+    odoo_name: string;
+    employee_branches: { is_active: boolean; branches: { code: string; is_active: boolean } | null }[];
+  }[];
+  return rows.flatMap((row) => {
+    const codes = row.employee_branches
+      .filter((link) => link.is_active && link.branches?.is_active)
+      .map((link) => link.branches!.code)
+      .sort();
+    // Someone without a branch is listed with an empty branch, so the admin can fill it in.
+    return (codes.length > 0 ? codes : ['']).map((branch) => ({ name: row.odoo_name, branch, active: true }));
+  });
+}
+
+export interface StaffUploadResult {
+  readonly added: number;
+  readonly left: number;
+  readonly activeEmployees: number;
+}
+
+export async function uploadStaff(rows: readonly StaffRow[]): Promise<StaffUploadResult> {
+  const result = unwrap(await supabase.rpc('admin_upsert_staff', { p_rows: rows })) as {
+    added: number;
+    left: number;
+    active_employees: number;
+  };
+  return { added: result.added, left: result.left, activeEmployees: result.active_employees };
 }

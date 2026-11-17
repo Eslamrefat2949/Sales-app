@@ -1,5 +1,6 @@
 import type { Invoice, PricedUnit } from '@ravin-sales/domain';
 import writeXlsxFile, { type Row } from 'write-excel-file/browser';
+import { safeFileName } from '../lib/files.ts';
 import { supabase, unwrap } from '../lib/supabase.ts';
 import type { AppConfig } from './appData.ts';
 import type { InvoicePayload, PendingInvoice } from './branchSync.ts';
@@ -7,6 +8,8 @@ import type { InvoicePayload, PendingInvoice } from './branchSync.ts';
 /** A branch invoice as shown in the report: from the server, or still waiting on this phone. */
 export interface ReportInvoice extends Invoice {
   readonly deviceId: string;
+  /** Odoo name of the sales person, read with the invoice so a later staff change does not lose it. */
+  readonly salesPersonName: string | null;
   readonly synced: boolean;
   readonly syncError: string | null;
 }
@@ -45,12 +48,14 @@ interface InvoiceRow {
     final_price: number;
   }[];
   invoice_payments: { method_id: string; amount: number; journal: string }[];
+  sales_person?: { odoo_name: string } | null;
 }
 
 const INVOICE_COLUMNS =
   'number, device_id, business_date, sold_at, sales_person_id, customer_mobile, customer_name, offer, unit_count, ' +
   'list_total, sale_total, default_discount_total, offer_discount_total, total, change_given, status, void_reason, ' +
-  'voided_at, export_batch_id, invoice_lines(*), invoice_payments(method_id, amount, journal)';
+  'voided_at, export_batch_id, invoice_lines(*), invoice_payments(method_id, amount, journal), ' +
+  'sales_person:employees(odoo_name)';
 
 function lineFrom(row: InvoiceRow['invoice_lines'][number]): PricedUnit {
   return {
@@ -74,6 +79,7 @@ function fromRow(row: InvoiceRow, branchCode: string): ReportInvoice {
     branchCode,
     deviceNo: 0,
     deviceId: row.device_id,
+    salesPersonName: row.sales_person?.odoo_name ?? null,
     createdAt: row.sold_at,
     businessDate: row.business_date,
     salesPersonId: row.sales_person_id,
@@ -119,18 +125,13 @@ export function fromPending({ payload, lastError }: PendingInvoice, branchCode: 
 }
 
 /**
- * Invoices of the open period (not closed yet), plus today's voided ones so the report can show them.
- * Row level security limits a branch to its own invoices.
+ * Invoices of the open period: not closed yet, plus the ones voided since the last close, so the
+ * report starts again from zero after every close. Row level security limits a branch to its own invoices.
  */
-export async function fetchOpenInvoices(config: AppConfig, today: string): Promise<ReportInvoice[]> {
-  const rows = unwrap(
-    await supabase
-      .from('invoices')
-      .select(INVOICE_COLUMNS)
-      .is('export_batch_id', null)
-      .or(`status.eq.completed,business_date.eq.${today}`)
-      .order('sold_at', { ascending: false }),
-  ) as unknown as InvoiceRow[];
+export async function fetchOpenInvoices(config: AppConfig, lastCloseAt: string | null): Promise<ReportInvoice[]> {
+  let query = supabase.from('invoices').select(INVOICE_COLUMNS).is('export_batch_id', null);
+  if (lastCloseAt) query = query.or(`status.eq.completed,voided_at.gt."${lastCloseAt}"`);
+  const rows = unwrap(await query.order('sold_at', { ascending: false })) as unknown as InvoiceRow[];
   return rows.map((row) => fromRow(row, config.branch?.code ?? ''));
 }
 
@@ -174,29 +175,64 @@ export async function previewExport(): Promise<ExportPreview> {
   };
 }
 
+/** One close of day: the invoices it locked and the sale dates they cover. */
 export interface ExportBatch {
   readonly id: string;
   readonly createdAt: string;
   readonly invoiceCount: number;
   readonly total: number;
   readonly downloadCount: number;
+  /** First and last sale date (YYYY-MM-DD) in the batch; the same day in the normal case. */
+  readonly firstDate: string;
+  readonly lastDate: string;
+  /** Invoices voided since the previous close, for the closing photo. */
+  readonly voidedCount: number;
+  readonly voidedTotal: number;
 }
 
-export async function listExportBatches(): Promise<ExportBatch[]> {
-  const rows = unwrap(
-    await supabase
-      .from('export_batches')
-      .select('id, created_at, invoice_count, total, download_count')
-      .order('created_at', { ascending: false })
-      .limit(10),
-  ) as { id: string; created_at: string; invoice_count: number; total: number; download_count: number }[];
-  return rows.map((row) => ({
+const BATCH_COLUMNS =
+  'id, created_at, invoice_count, total, download_count, first_business_date, last_business_date, voided_count, voided_total';
+
+interface BatchRow {
+  id: string;
+  created_at: string;
+  invoice_count: number;
+  total: number;
+  download_count: number;
+  first_business_date: string | null;
+  last_business_date: string | null;
+  voided_count: number;
+  voided_total: number;
+}
+
+const cairoDate = (iso: string) =>
+  new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Cairo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(iso));
+
+function batchFrom(row: BatchRow): ExportBatch {
+  const fallback = cairoDate(row.created_at);
+  return {
     id: row.id,
     createdAt: row.created_at,
     invoiceCount: row.invoice_count,
     total: Number(row.total),
     downloadCount: row.download_count,
-  }));
+    firstDate: row.first_business_date ?? fallback,
+    lastDate: row.last_business_date ?? row.first_business_date ?? fallback,
+    voidedCount: row.voided_count,
+    voidedTotal: Number(row.voided_total),
+  };
+}
+
+export async function listExportBatches(): Promise<ExportBatch[]> {
+  const rows = unwrap(
+    await supabase.from('export_batches').select(BATCH_COLUMNS).order('created_at', { ascending: false }).limit(15),
+  ) as unknown as BatchRow[];
+  return rows.map(batchFrom);
 }
 
 const pounds = (piasters: number) => Math.round(piasters) / 100;
@@ -264,12 +300,18 @@ export function buildOdooRows(
         line ? pounds(line.salePrice) : null,
         payment ? pounds(payment.amount) : null,
         payment ? (journalByMethod.get(payment.methodCode) ?? payment.methodCode) : null,
-        first ? (employeeName.get(invoice.salesPersonId) ?? null) : null,
+        first ? (invoice.salesPersonName ?? employeeName.get(invoice.salesPersonId) ?? null) : null,
         line ? line.discountPercent : null,
       ]);
     }
   }
   return rows;
+}
+
+/** A close of day with its invoices, ready to become the Odoo sheet and the closing photo. */
+export interface ClosedDay {
+  readonly batch: ExportBatch;
+  readonly invoices: readonly ReportInvoice[];
 }
 
 async function fetchBatchInvoices(config: AppConfig, batchId: string): Promise<ReportInvoice[]> {
@@ -279,27 +321,47 @@ async function fetchBatchInvoices(config: AppConfig, batchId: string): Promise<R
   return rows.map((row) => fromRow(row, config.branch?.code ?? ''));
 }
 
-async function downloadSheet(config: AppConfig, invoices: readonly ReportInvoice[], createdAt: string) {
+/**
+ * Closes the day: locks every invoice not exported yet into a new batch (the server numbers nothing
+ * here, invoice numbers keep counting from where they are). Null when there is nothing to close.
+ */
+export async function closeDay(config: AppConfig): Promise<ClosedDay | null> {
+  const result = unwrap(await supabase.rpc('create_export_batch')) as { batch_id: string | null };
+  if (!result.batch_id) return null;
+  return openBatch(config, result.batch_id);
+}
+
+/** Reads an earlier close again (for its photo or its sheet). */
+export async function openBatch(config: AppConfig, batchId: string): Promise<ClosedDay> {
+  const [row, invoices] = await Promise.all([
+    supabase.from('export_batches').select(BATCH_COLUMNS).eq('id', batchId).single(),
+    fetchBatchInvoices(config, batchId),
+  ]);
+  return { batch: batchFrom(unwrap(row) as unknown as BatchRow), invoices };
+}
+
+/** Counts a repeated sheet download on the server, so a double import into Odoo can be traced. */
+export async function recordSheetDownload(batchId: string): Promise<void> {
+  unwrap(await supabase.rpc('record_export_download', { p_batch_id: batchId }));
+}
+
+/** "2026-11-18", or "2026-11-17 to 2026-11-18" when late invoices from an earlier day were in the close. */
+export function batchDates(batch: Pick<ExportBatch, 'firstDate' | 'lastDate'>): string {
+  return batch.firstDate === batch.lastDate ? batch.firstDate : `${batch.firstDate} to ${batch.lastDate}`;
+}
+
+/** e.g. "OCT - 6th of October Outlet Mall - 2026-11-18": the branch and the day it sold. */
+export function closingFileStem(config: AppConfig, batch: Pick<ExportBatch, 'firstDate' | 'lastDate'>): string {
+  const branch = config.branch ? `${config.branch.code} - ${config.branch.posName}` : 'RAVIN';
+  return safeFileName(`${branch} - ${batchDates(batch)}`);
+}
+
+/** The Odoo POS Import sheet of a close, named after the branch and the sale date. */
+export async function odooSheet(config: AppConfig, closed: ClosedDay): Promise<{ blob: Blob; fileName: string }> {
   const journals = new Map(config.paymentMethods.map((method) => [method.code, method.journal]));
   const employees = new Map(config.employees.map((employee) => [employee.id, employee.name]));
-  const stamp = createdAt.slice(0, 16).replace(/[-:T]/g, '');
-  await writeXlsxFile(buildOdooRows(invoices, journals, employees)).toFile(
-    `pos-import-${config.branch?.code ?? 'branch'}-${stamp}.xlsx`,
-  );
-}
-
-/** Locks every invoice not exported yet into a new batch and downloads the Odoo sheet. */
-export async function exportNewBatch(config: AppConfig): Promise<{ invoiceCount: number } | null> {
-  const batch = unwrap(await supabase.rpc('create_export_batch')) as { batch_id: string | null; invoice_count: number };
-  if (!batch.batch_id) return null;
-  await downloadSheet(config, await fetchBatchInvoices(config, batch.batch_id), new Date().toISOString());
-  return { invoiceCount: batch.invoice_count };
-}
-
-/** Downloads an earlier batch again; the server counts it so double imports are visible. */
-export async function downloadBatchAgain(config: AppConfig, batch: ExportBatch): Promise<void> {
-  unwrap(await supabase.rpc('record_export_download', { p_batch_id: batch.id }));
-  await downloadSheet(config, await fetchBatchInvoices(config, batch.id), batch.createdAt);
+  const blob = await writeXlsxFile(buildOdooRows(closed.invoices, journals, employees)).toBlob();
+  return { blob, fileName: `${closingFileStem(config, closed.batch)}.xlsx` };
 }
 
 export type { InvoicePayload };

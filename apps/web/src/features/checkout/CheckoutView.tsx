@@ -18,7 +18,7 @@ interface CheckoutViewProps {
   readonly config: AppConfig;
   readonly priced: PricedCart;
   readonly onBack: () => void;
-  readonly onConfirm: (result: CheckoutResult) => void;
+  readonly onConfirm: (result: CheckoutResult) => Promise<void>;
 }
 
 interface PaymentRow {
@@ -44,7 +44,7 @@ export function CheckoutView({ config, priced, onBack, onConfirm }: CheckoutView
   const total = priced.totals.total;
   const [salesPersonId, setSalesPersonId] = useState(() => {
     const last = readJson<string>('last-sales-person', '');
-    return config.employees.some((employee) => employee.id === last) ? last : '';
+    return config.employees.some((employee) => employee.id === last && employee.inBranch) ? last : '';
   });
   const [mobileInput, setMobileInput] = useState('');
   const [name, setName] = useState('');
@@ -55,8 +55,8 @@ export function CheckoutView({ config, priced, onBack, onConfirm }: CheckoutView
     return [{ id: 1, methodCode: method, amount: moneyToInput(total) }];
   });
 
+  // The server sends a branch only its own staff; the filter keeps it that way for older cached data.
   const branchStaff = config.employees.filter((employee) => employee.inBranch);
-  const otherStaff = config.employees.filter((employee) => !employee.inBranch);
   const mobile = normalizeEgyptianMobile(mobileInput);
   const mobileInvalid = mobileInput.trim() !== '' && mobile === null;
   const lines = useMemo(() => toPaymentLines(rows), [rows]);
@@ -88,6 +88,8 @@ export function CheckoutView({ config, priced, onBack, onConfirm }: CheckoutView
 
   const blocker = !salesPersonId ? t.needSalesPerson : mobileInvalid ? t.checkMobile : null;
   const canConfirm = blocker === null && settlement?.ok === true;
+  // One invoice per tap: the button stays locked while the invoice is being saved.
+  const [submitting, setSubmitting] = useState(false);
 
   const paymentStatus = !settlement ? (
     <span className="text-danger">{t.invalidAmount}</span>
@@ -111,15 +113,16 @@ export function CheckoutView({ config, priced, onBack, onConfirm }: CheckoutView
       className="gutter mx-auto flex max-w-xl flex-col gap-4 pt-5 pb-10"
       onSubmit={(event) => {
         event.preventDefault();
-        if (!canConfirm || !settlement?.ok) return;
+        if (!canConfirm || !settlement?.ok || submitting) return;
         writeJson('last-sales-person', salesPersonId);
         writeJson('last-payment-method', rows[0]?.methodCode ?? '');
-        onConfirm({
+        setSubmitting(true);
+        void onConfirm({
           salesPersonId,
           customer: { mobile: mobile ?? '', name: name.trim() },
           payments: settlement.payments,
           change: settlement.change,
-        });
+        }).finally(() => setSubmitting(false));
       }}
     >
       <button
@@ -155,16 +158,8 @@ export function CheckoutView({ config, priced, onBack, onConfirm }: CheckoutView
                 {employee.name}
               </option>
             ))}
-            {otherStaff.length > 0 ? (
-              <optgroup label={t.otherBranches}>
-                {otherStaff.map((employee) => (
-                  <option key={employee.id} value={employee.id}>
-                    {employee.name}
-                  </option>
-                ))}
-              </optgroup>
-            ) : null}
           </select>
+          {branchStaff.length === 0 ? <p className="mt-2 text-sm text-danger">{t.noStaff}</p> : null}
         </Field>
       </Card>
 
@@ -267,7 +262,7 @@ export function CheckoutView({ config, priced, onBack, onConfirm }: CheckoutView
         {blocker ? <p className="text-center text-sm text-muted">{blocker}</p> : null}
         <button
           type="submit"
-          disabled={!canConfirm}
+          disabled={!canConfirm || submitting}
           className="press flex min-h-15 items-center justify-center gap-2 rounded-2xl bg-primary px-6 text-lg font-semibold text-primary-fg shadow-card disabled:opacity-40"
         >
           <Icon name="check" />

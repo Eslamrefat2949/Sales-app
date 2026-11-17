@@ -1,6 +1,6 @@
 // Loads the Odoo item list (Product Variant export) into Supabase, with the same rules as the admin
 // screen. Usage:
-//   ADMIN_NAME="ESLAM REFAT" ADMIN_PIN=123456 node apps/web/scripts/import-catalog.mjs <file.xlsx>
+//   ADMIN_NAME="Mr ESLAM REFAT" ADMIN_PIN=123456 node apps/web/scripts/import-catalog.mjs <file.xlsx>
 import { createClient } from '@supabase/supabase-js';
 import { readSheet } from 'read-excel-file/node';
 import { findItemListColumns, prepareCatalogImport, readItemListRows } from '../../../packages/domain/src/index.ts';

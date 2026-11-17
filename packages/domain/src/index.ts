@@ -48,3 +48,14 @@ export {
   type CatalogProduct,
   type CatalogSourceRow,
 } from './catalog-import.ts';
+export {
+  findStaffColumns,
+  isActiveStatus,
+  prepareStaffImport,
+  readItemCodes,
+  readStaffRows,
+  type StaffColumns,
+  type StaffImport,
+  type StaffRow,
+  type StaffSourceRow,
+} from './staff-import.ts';

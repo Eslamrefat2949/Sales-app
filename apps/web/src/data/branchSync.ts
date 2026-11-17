@@ -116,14 +116,23 @@ export function toPayload(
   };
 }
 
+export interface ReservedNumber {
+  readonly number: string;
+  readonly seq: number;
+  readonly device: Device;
+}
+
 export interface BranchSync {
   readonly device: Device | null;
   readonly pending: readonly PendingInvoice[];
   readonly online: boolean;
   readonly syncing: boolean;
   readonly lastSyncedAt: string | null;
-  /** Reserves the next invoice number on this phone; null if it has none left and is offline. */
-  readonly takeNumber: () => { number: string; seq: number } | null;
+  /**
+   * Takes the next invoice number of this phone. On a phone that was just signed in it first waits
+   * for its block of numbers; null only when it has none left and cannot reach the server.
+   */
+  readonly takeNumber: () => Promise<ReservedNumber | null>;
   /** Saves an invoice on the phone and sends it as soon as possible. */
   readonly enqueue: (payload: InvoicePayload) => Promise<void>;
   readonly syncNow: () => Promise<void>;
@@ -144,7 +153,7 @@ export function useBranchSync(config: AppConfig): BranchSync {
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const pendingRef = useRef<readonly PendingInvoice[]>([]);
   const syncingRef = useRef(false);
-  const numbersKey = device ? `numbers:${branch.id}:${device.id}` : null;
+  const preparingRef = useRef<Promise<void> | null>(null);
 
   const savePending = useCallback(
     async (next: readonly PendingInvoice[]) => {
@@ -192,12 +201,20 @@ export function useBranchSync(config: AppConfig): BranchSync {
     }
   }, [branch.id, deviceKey]);
 
+  /** One registration / reservation at a time, shared by the sync loop and a waiting sale. */
+  const prepareOnce = useCallback(() => {
+    preparingRef.current ??= prepare().finally(() => {
+      preparingRef.current = null;
+    });
+    return preparingRef.current;
+  }, [prepare]);
+
   const syncNow = useCallback(async () => {
     if (syncingRef.current || !navigator.onLine) return;
     syncingRef.current = true;
     setSyncing(true);
     try {
-      await prepare();
+      await prepareOnce();
       let queue = pendingRef.current;
       for (const item of [...queue]) {
         try {
@@ -223,7 +240,7 @@ export function useBranchSync(config: AppConfig): BranchSync {
       syncingRef.current = false;
       setSyncing(false);
     }
-  }, [deviceKey, prepare, savePending]);
+  }, [deviceKey, prepareOnce, savePending]);
 
   useEffect(() => {
     void syncNow();
@@ -235,16 +252,30 @@ export function useBranchSync(config: AppConfig): BranchSync {
     };
   }, [syncNow]);
 
-  const takeNumber = useCallback(() => {
-    if (!numbersKey) return null;
-    const numbers = readJson<NumberBlocks>(numbersKey, { blocks: [], cursor: 0 });
+  /** Takes a number from what is stored on the phone (read fresh, never from a stale render). */
+  const takeStoredNumber = useCallback((): ReservedNumber | null => {
+    const current = readJson<Device | null>(deviceKey, null);
+    if (!current) return null;
+    const key = `numbers:${branch.id}:${current.id}`;
+    const numbers = readJson<NumberBlocks>(key, { blocks: [], cursor: 0 });
     const seq = nextNumber(numbers);
     if (seq === null) return null;
     // Saved before the invoice exists, so a crash can never reuse the number.
-    writeJson(numbersKey, { ...numbers, cursor: seq });
+    writeJson(key, { ...numbers, cursor: seq });
     if (remainingNumbers({ ...numbers, cursor: seq }) < REFILL_BELOW) void syncNow();
-    return { number: formatInvoiceNumber({ branchCode: branch.code, seq }), seq };
-  }, [branch.code, numbersKey, syncNow]);
+    return { number: formatInvoiceNumber({ branchCode: branch.code, seq }), seq, device: current };
+  }, [branch.code, branch.id, deviceKey, syncNow]);
+
+  const takeNumber = useCallback(async (): Promise<ReservedNumber | null> => {
+    const stored = takeStoredNumber();
+    if (stored || !navigator.onLine) return stored;
+    try {
+      await prepareOnce();
+    } catch {
+      return null;
+    }
+    return takeStoredNumber();
+  }, [prepareOnce, takeStoredNumber]);
 
   const enqueue = useCallback(
     async (payload: InvoicePayload) => {

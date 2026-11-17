@@ -32,8 +32,8 @@ export function BranchApp({ data }: { readonly data: LoadedData }) {
   const [view, setView] = useState<View>({ name: 'sell' });
 
   const confirm = async (result: CheckoutResult) => {
-    const reserved = sync.takeNumber();
-    if (!reserved || !sync.device) {
+    const reserved = await sync.takeNumber();
+    if (!reserved) {
       notify(t.noNumbers, 'error');
       void sync.syncNow();
       return;
@@ -42,7 +42,7 @@ export function BranchApp({ data }: { readonly data: LoadedData }) {
     const invoice: Invoice = {
       number: reserved.number,
       branchCode: branch.code,
-      deviceNo: sync.device.number,
+      deviceNo: reserved.device.number,
       createdAt: now.toISOString(),
       businessDate: businessDateOf(now),
       salesPersonId: result.salesPersonId,
@@ -59,7 +59,7 @@ export function BranchApp({ data }: { readonly data: LoadedData }) {
     await sync.enqueue(
       toPayload(invoice, {
         seq: reserved.seq,
-        deviceId: sync.device.id,
+        deviceId: reserved.device.id,
         defaultDiscountPercent: config.defaultDiscountPercent,
       }),
     );
@@ -109,12 +109,7 @@ export function BranchApp({ data }: { readonly data: LoadedData }) {
             onCheckout={() => setView({ name: 'checkout' })}
           />
         ) : view.name === 'checkout' ? (
-          <CheckoutView
-            config={config}
-            priced={priced}
-            onBack={() => setView({ name: 'sell' })}
-            onConfirm={(result) => void confirm(result)}
-          />
+          <CheckoutView config={config} priced={priced} onBack={() => setView({ name: 'sell' })} onConfirm={confirm} />
         ) : view.name === 'done' ? (
           <ConfirmationView config={config} invoice={view.invoice} onNewSale={() => setView({ name: 'sell' })} />
         ) : (
